@@ -35,10 +35,6 @@ A usable offline notebook. No server, no accounts, no encryption.
 - [x] PWA: installable, offline shell, persistence request (best effort)
 - [x] debug overlay: every table incl. the op log, row detail, `⌘/Ctrl+Shift+D` or `?debug`, isolated in
       its own chunk, shadow root and error boundary
-- [x] tests: 38 vitest unit/component tests on the real schema, 7 Playwright flows covering
-      persistence across reload, search, tags, restore, the todo lifecycle and two tabs — passing on
-      Chromium and Firefox (`VARIA_E2E_BROWSERS=firefox`); Playwright's WebKit build has no working
-      OPFS, so iOS stays a manual check on device
 
 Testing is part of every phase from here on: the worker/handler split means the same code that runs
 in the browser is what the component and data tests exercise, and `data-db="ready"` on `<html>` is

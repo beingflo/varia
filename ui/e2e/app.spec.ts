@@ -39,6 +39,28 @@ test('is cross-origin isolated, as the sqlite opfs VFS requires', async ({ page 
   await ready(page);
 });
 
+test('keeps the open note in the url across a reload', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  expect(new URL(page.url()).pathname).toBe('/');
+
+  await page.keyboard.press(`${MOD}+Shift+E`);
+  await page.getByLabel('list title').fill('linked list');
+  await press(page, 's');
+  const add = page.getByLabel('new item');
+  await add.fill('survives a reload');
+  await add.press('Enter');
+
+  expect(new URL(page.url()).pathname).toMatch(/^\/note\/[\w-]+$/);
+
+  // The opfs VFS lands writes asynchronously: a reload in the same tick as the write could lose it.
+  await page.waitForTimeout(400);
+  await page.reload();
+  await ready(page);
+  await expect(page.getByLabel('list title')).toHaveValue('linked list');
+  await expect(page.getByLabel('survives a reload', { exact: true })).toBeVisible();
+});
+
 test('lands on an empty note and saves it only on command', async ({ page }) => {
   await page.goto('/');
   await ready(page);

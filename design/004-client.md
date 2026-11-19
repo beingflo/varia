@@ -26,6 +26,28 @@ Two tabs share the database through the `opfs` VFS, so SQLite handles the lockin
 pings `BroadcastChannel` so other tabs re-read instead of showing stale notes — a notification, never
 a write path.
 
+## Known issue: writes landing on disk
+
+The `opfs` VFS lands writes asynchronously, so a page that reloads or closes within tens of
+milliseconds of a write can lose that write, even though SQLite committed it and the row was already
+on screen. Measured on Firefox: a reload 0 ms after a save loses the write, 50 ms loses the last op,
+100 ms and beyond is safe. Chromium persists more eagerly and did not show it.
+
+Not the durability pragmas: `journal_mode=DELETE` and `synchronous=FULL` produce identical results,
+so it is the VFS write path, not commit syncing. What is not lost is anything the user did before
+that window, and the 1.5 s snapshot idle timer keeps the gap to the last keystroke small.
+
+Mitigation, if it ever bites in practice: flush at `pagehide` inside the worker (close and reopen the
+connection, or hold the unload for a settle delay). Not done: the fix costs a DB lifecycle change for
+a window no user hits on purpose, and it should be measured again against the real worker first.
+
+## Deep links
+
+The open note is in the address bar as `/note/<id>` and reopened on load, so a reload or a bookmark
+lands on the same note. Written with `replaceState`: moving between notes is not a history trail.
+The path form needs the host to serve `index.html` for unknown paths — the single-binary service
+does; a static host needs the SPA fallback configured.
+
 ## Editing
 
 - **Notes**: a CodeMirror 6 editor over the Markdown source. Highlighting, list continuation

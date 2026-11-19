@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount, Show } from 'solid-js';
+import { createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js';
 import HistoryHost from './components/History';
 import { useRepo } from './db/context';
 import { focusEditor, onCommand } from './lib/commands';
@@ -13,10 +13,28 @@ type Open = { kind: 'note'; id?: string } | { kind: 'todo'; id: string };
 /** One page, no routes: the landing state is an empty note that is only saved once written. */
 export default function App() {
   const repo = useRepo();
+  // Deep links are paths (/note/<id>): the host must serve index.html for them (an spa fallback).
+  const linkedId = location.pathname.match(/\/note\/([\w-]+)/)?.[1] ?? null;
   const [open, setOpen] = createSignal<Open>({ kind: 'note' });
+  const [linked, setLinked] = createSignal(linkedId === null);
   const [listOpen, setListOpen] = createSignal(false);
 
+  // The open note is in the url, so a reload or a bookmark lands on the same note.
+  createEffect(() => {
+    const id = open().id;
+    if (!id && !linked()) return; // the note in the url is still being looked up
+    const url = new URL(location.href);
+    url.pathname = id ? `${import.meta.env.BASE_URL}note/${id}` : import.meta.env.BASE_URL;
+    history.replaceState(null, '', url);
+  });
+
   onMount(() => {
+    void (async () => {
+      const note = linkedId ? await repo.getNote(linkedId) : undefined;
+      if (note) setOpen({ kind: note.kind, id: note.id });
+      setLinked(true); // a url naming a deleted or unknown note falls back to the draft
+    })();
+
     const off = [
       onCommand('list', async () => {
         if (listOpen()) {

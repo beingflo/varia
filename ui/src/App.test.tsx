@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor } from '@solidjs/testing-library';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { testRepo } from './db/inProcess';
 import { runCommand } from './lib/commands';
 import { renderWithRepo } from './test-utils';
@@ -11,6 +11,36 @@ vi.mock('./editor/Editor', async () => ({ default: (await import('./editor/Texta
 const mod = (command: Parameters<typeof runCommand>[0]) => runCommand(command);
 
 describe('App', () => {
+  afterEach(() => history.replaceState({}, '', '/'));
+
+  it('restores the note named in the url', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('note');
+    await repo.saveBody(id, 'linked body');
+    history.replaceState({}, '', `/note/${id}`);
+    renderWithRepo(() => <App />, repo);
+
+    await waitFor(() => expect(screen.getByLabelText('note body')).toHaveProperty('value', 'linked body'));
+  });
+
+  it('opens a list named in the url as a list', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('todo');
+    await repo.setNoteMeta(id, { title: 'linked list' });
+    history.replaceState({}, '', `/note/${id}`);
+    renderWithRepo(() => <App />, repo);
+
+    await waitFor(() => expect(screen.getByLabelText('list title')).toHaveProperty('value', 'linked list'));
+  });
+
+  it('drops a url naming a note that is gone', async () => {
+    history.replaceState({}, '', '/note/missing');
+    renderWithRepo(() => <App />, testRepo());
+
+    await waitFor(() => expect(screen.getByLabelText('note body')).toHaveProperty('value', ''));
+    expect(location.pathname).toBe('/');
+  });
+
   it('lands on an empty draft and creates nothing', async () => {
     const repo = testRepo();
     renderWithRepo(() => <App />, repo);
