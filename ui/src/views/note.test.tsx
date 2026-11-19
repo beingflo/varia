@@ -5,6 +5,9 @@ import { runCommand } from '../lib/commands';
 import { renderWithRepo } from '../test-utils';
 import NoteView from './NoteView';
 
+// CodeMirror needs a real browser; the tests use the same props on a textarea.
+vi.mock('../editor/Editor', async () => ({ default: (await import('../editor/TextareaDouble')).default }));
+
 describe('Note view', () => {
   it('does not create a note for an empty draft', async () => {
     const repo = testRepo();

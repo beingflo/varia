@@ -43,8 +43,8 @@ ui/         SolidJS + Vite PWA (client)
 
 D1 Owner-scoped accounts, no collaboration or sharing. Conflicts only ever happen between your own
 devices.
-D2 Two note types; text notes are Markdown, never a rich-text document model (a rich *view* may come
-later). No `journal` type.
+D2 Two note types; text notes are Markdown, never a rich-text document model. The source is shown
+with syntax highlighting rather than rendered into a separate view. No `journal` type.
 D3 History is an append-only op log, kept forever; snapshots only when the body changed; concurrent
 text edits stay as sibling branches.
 D4 Client is SQLite (WASM) over OPFS in a dedicated worker, using the `opfs` VFS so SQLite's own
@@ -72,6 +72,4 @@ Detail and rationale per area:
   passphrase to unlock OPFS later?
 - "Mark conflict resolved" cannot be derived from the tree, so it needs stored state when the
   version tree view is built — op kind or client-only flag?
-- Markdown rendering: a small hand-rolled subset vs a dependency, and how to keep the reading view
-  from being an XSS surface for note content.
 - Rate limits and the 500 MB cap are first guesses; tune against real sync volume.

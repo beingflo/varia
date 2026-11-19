@@ -61,7 +61,7 @@ the readiness marker the browser tests wait on.
 ## Phase 4: Advanced, unordered
 
 - [ ] version tree view: browse the tree, open a note at any node, edit an old version, mark resolved
-- [ ] rich reading view for Markdown
+- [ ] vim mode for the note editor (pick the implementation then; the editor is behind one component)
 - [ ] quick capture: `…/?q=work buy milk` opens the `work` todo list with a new item appended
 - [ ] tag timeline: all notes under a tag as one time-ordered stream (journal-style capture)
 - [ ] export: zip of `*.md`, todo JSON and the raw op log; import that restores an account

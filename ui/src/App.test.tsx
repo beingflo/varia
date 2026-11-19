@@ -1,9 +1,12 @@
 import { fireEvent, screen, waitFor } from '@solidjs/testing-library';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { testRepo } from './db/inProcess';
 import { runCommand } from './lib/commands';
 import { renderWithRepo } from './test-utils';
 import App from './App';
+
+// CodeMirror needs a real browser; the tests use the same props on a textarea.
+vi.mock('./editor/Editor', async () => ({ default: (await import('./editor/TextareaDouble')).default }));
 
 const mod = (command: Parameters<typeof runCommand>[0]) => runCommand(command);
 

@@ -20,6 +20,19 @@ async function openDebug(page: Page) {
 
 const editor = (page: Page) => page.getByLabel('note body');
 
+/** CodeMirror renders lines as blocks: innerText is the document, minus the empty placeholder. */
+const bodyText = (page: Page) =>
+  editor(page).evaluate((el) => {
+    // The placeholder is only present while the document is empty; a detached clone would lose
+    // the block layout that turns lines into newlines.
+    if (el.querySelector('.cm-placeholder')) return '';
+    return (el as HTMLElement).innerText;
+  });
+
+/** The editor is a contenteditable, so "value" assertions poll its text instead. */
+const expectBody = (page: Page, value: string) =>
+  expect.poll(() => bodyText(page), { timeout: 5000 }).toBe(value);
+
 test('is cross-origin isolated, as the sqlite opfs VFS requires', async ({ page }) => {
   await page.goto('/');
   expect(await page.evaluate(() => crossOriginIsolated)).toBe(true);
@@ -30,18 +43,18 @@ test('lands on an empty note and saves it only on command', async ({ page }) => 
   await page.goto('/');
   await ready(page);
 
-  await expect(editor(page)).toHaveValue('');
+  await expectBody(page, '');
   await expect(page).toHaveTitle('varia');
 
   await editor(page).fill('# Lab notes\nthe retry loop coalesces');
   await press(page, 's');
   // Saving a draft must not clear or deselect what was just written.
-  await expect(editor(page)).toHaveValue('# Lab notes\nthe retry loop coalesces');
+  await expectBody(page, '# Lab notes\nthe retry loop coalesces');
 
   await openList(page);
-  await expect(page.getByText('Lab notes')).toBeVisible();
+  await expect(page.locator('.notes li', { hasText: 'Lab notes' })).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(editor(page)).toHaveValue('# Lab notes\nthe retry loop coalesces');
+  await expectBody(page, '# Lab notes\nthe retry loop coalesces');
   await expect(editor(page)).toBeFocused();
 });
 
@@ -64,7 +77,7 @@ test('does not save while typing', async ({ page }) => {
   await openDebug(page);
   await expect(page.locator('nav button[aria-label="table version"]')).toContainText('version2');
   await page.keyboard.press('Escape');
-  await expect(editor(page)).toHaveValue('saved once, then typed more');
+  await expectBody(page, 'saved once, then typed more');
 });
 
 test('saves on blur', async ({ page }) => {
@@ -73,7 +86,7 @@ test('saves on blur', async ({ page }) => {
   await editor(page).fill('saved by blur');
   await page.getByLabel('tags').click(); // moves focus away from the editor
   await openList(page);
-  await expect(page.getByText('saved by blur')).toBeVisible();
+  await expect(page.locator('.notes li', { hasText: 'saved by blur' })).toBeVisible();
 });
 
 test('starts a new note from anywhere and searches the list', async ({ page }) => {
@@ -83,7 +96,7 @@ test('starts a new note from anywhere and searches the list', async ({ page }) =
   await press(page, 's');
 
   await press(page, 'e');
-  await expect(editor(page)).toHaveValue('');
+  await expectBody(page, '');
 
   await editor(page).fill('second note');
   await press(page, 's');
@@ -93,7 +106,7 @@ test('starts a new note from anywhere and searches the list', async ({ page }) =
   await expect(page.getByText('first note')).toBeHidden();
   await page.keyboard.press('Enter');
   await expect(page.getByLabel('search notes')).toHaveCount(0);
-  await expect(editor(page)).toHaveValue('second note');
+  await expectBody(page, 'second note');
 });
 
 test('deletes the open note', async ({ page }) => {
@@ -103,7 +116,7 @@ test('deletes the open note', async ({ page }) => {
   await press(page, 's');
   await press(page, 'd');
 
-  await expect(editor(page)).toHaveValue('');
+  await expectBody(page, '');
   await openList(page);
   await expect(page.getByText('nothing yet')).toBeVisible();
 });
@@ -121,7 +134,7 @@ test('restores an old version from history', async ({ page }) => {
   await expect(versions).toHaveCount(2);
   await versions.last().click();
 
-  await expect(editor(page)).toHaveValue('first draft');
+  await expectBody(page, 'first draft');
 });
 
 test('runs a todo list: add, click to check off, show done, edit, delete', async ({ page }) => {
@@ -174,7 +187,7 @@ test('ctrl+j and ctrl+k move the selection without closing the list', async ({ p
   await editor(page).fill('alpha');
   await press(page, 's');
   await press(page, 'e');
-  await expect(editor(page)).toHaveValue(''); // the fresh draft is ready before typing
+  await expectBody(page, ''); // the fresh draft is ready before typing
   await editor(page).fill('beta');
   await press(page, 's');
 
@@ -184,7 +197,7 @@ test('ctrl+j and ctrl+k move the selection without closing the list', async ({ p
   await expect(page.getByLabel('search notes')).toBeVisible(); // the list stayed open
   await page.keyboard.press('Enter');
   await expect(page.getByLabel('search notes')).toHaveCount(0); // the list closes once loaded
-  await expect(editor(page)).toHaveValue('alpha');
+  await expectBody(page, 'alpha');
 
   await openList(page);
   await expect(page.locator('.notes li')).toHaveCount(2);
@@ -192,7 +205,7 @@ test('ctrl+j and ctrl+k move the selection without closing the list', async ({ p
   await expect(page.getByLabel('search notes')).toBeVisible();
   await page.keyboard.press('Enter');
   await expect(page.getByLabel('search notes')).toHaveCount(0);
-  await expect(editor(page)).toHaveValue('beta');
+  await expectBody(page, 'beta');
 });
 
 test('keeps both notes when a new one is started right after saving', async ({ page }) => {
@@ -201,13 +214,13 @@ test('keeps both notes when a new one is started right after saving', async ({ p
   await editor(page).fill('alpha');
   await press(page, 's');
   await press(page, 'e'); // immediately, without waiting for the save
-  await expect(editor(page)).toHaveValue('');
+  await expectBody(page, '');
   await editor(page).fill('beta');
   await press(page, 's');
 
   await openList(page);
-  await expect(page.getByText('alpha')).toBeVisible();
-  await expect(page.getByText('beta')).toBeVisible();
+  await expect(page.locator('.notes li', { hasText: 'alpha' })).toBeVisible();
+  await expect(page.locator('.notes li', { hasText: 'beta' })).toBeVisible();
 });
 
 test('fits an empty note in the viewport without scrolling', async ({ page }) => {
@@ -224,7 +237,7 @@ test('reveals the opened note already loaded, never the previous one', async ({ 
   await editor(page).fill('alpha body');
   await press(page, 's');
   await press(page, 'e');
-  await expect(editor(page)).toHaveValue('');
+  await expectBody(page, '');
   await editor(page).fill('beta body');
   await press(page, 's');
 
@@ -236,8 +249,8 @@ test('reveals the opened note already loaded, never the previous one', async ({ 
     const seen: (string | null)[] = [];
     (window as unknown as { __revealed: (string | null)[] }).__revealed = seen;
     const record = () => {
-      const field = document.querySelector('.editor') as HTMLTextAreaElement | null;
-      seen.push(field?.value ?? null);
+      const field = document.querySelector('.cm-content') as HTMLElement | null;
+      seen.push(field?.innerText ?? null);
     };
     const tick = () => {
       if (document.querySelector('section.overlay')) return requestAnimationFrame(tick);
@@ -247,7 +260,7 @@ test('reveals the opened note already loaded, never the previous one', async ({ 
   });
 
   await page.locator('.notes li').nth(1).click(); // the older note: alpha
-  await expect(editor(page)).toHaveValue('alpha body');
+  await expectBody(page, 'alpha body');
   await expect(page.locator('section.overlay')).toHaveCount(0);
 
   // The recording happens on the first paint after the overlay is gone.
@@ -287,6 +300,64 @@ test('adds an item without the placeholder flashing back first', async ({ page }
   expect(await page.evaluate(() => (window as unknown as { __emptyFrames: number[] }).__emptyFrames)).toEqual([]);
 });
 
+test('continues markdown lists and nests them with tab', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await editor(page).fill('- one');
+  await editor(page).press('Enter');
+  await page.keyboard.type('two');
+  await expectBody(page, '- one\n- two');
+
+  // Tab nests the second item.
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
+  await expectBody(page, '- one\n  - two');
+
+  // Enter on an empty item leaves the list instead of adding another marker.
+  await editor(page).press('Enter');
+  await editor(page).press('Enter');
+  await page.keyboard.type('plain');
+  await expectBody(page, '- one\n  - two\nplain');
+});
+
+test('continues numbered lists and counts up', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await editor(page).fill('1. first');
+  await editor(page).press('Enter');
+  await page.keyboard.type('second');
+  await expectBody(page, '1. first\n2. second');
+});
+
+test('renders and highlights fenced code blocks, and marks inline code', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await editor(page).fill('# Title\n\n```js\nconst answer = 42;\n```\n\nand `inline` here');
+
+  // The embedded grammar is loaded on demand, so the tokens gain colours a moment after the paste.
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const line = [...document.querySelectorAll('.cm-line')].find((el) =>
+          el.textContent?.includes('const answer'),
+        );
+        return new Set([...(line?.querySelectorAll('span') ?? [])].map((el) => getComputedStyle(el).color)).size;
+      }),
+    )
+    .toBeGreaterThan(1);
+
+  const fenced = await page.evaluate(() => {
+    const line = [...document.querySelectorAll('.cm-line')].find((el) => el.textContent?.includes('const answer'));
+    const style = line ? getComputedStyle(line) : undefined;
+    return {
+      monospace: style?.fontFamily.includes('mono') ?? false,
+      tinted: (style?.backgroundColor ?? 'rgba(0, 0, 0, 0)') !== 'rgba(0, 0, 0, 0)',
+    };
+  });
+  expect(fenced.monospace).toBe(true);
+  expect(fenced.tinted).toBe(true);
+});
+
 test('opens a long note at the top with the caret at the end', async ({ page }) => {
   await page.goto('/');
   await ready(page);
@@ -294,18 +365,23 @@ test('opens a long note at the top with the caret at the end', async ({ page }) 
   await editor(page).fill(long);
   await press(page, 's');
   await press(page, 'e');
-  await expect(editor(page)).toHaveValue('');
+  await expectBody(page, '');
 
   await openList(page);
   await page.locator('.notes li').first().click();
   await expect(page.locator('section.overlay')).toHaveCount(0);
 
-  const { scrollY, caret } = await page.evaluate(() => {
-    const field = document.querySelector('.editor') as HTMLTextAreaElement;
-    return { scrollY: window.scrollY, caret: field.selectionStart, end: field.value.length };
+  const { scrollY, inLastLine } = await page.evaluate(() => {
+    const selection = window.getSelection();
+    const lines = [...document.querySelectorAll('.cm-line')];
+    const anchor = selection?.anchorNode;
+    return {
+      scrollY: window.scrollY,
+      inLastLine: Boolean(anchor && lines[lines.length - 1]?.contains(anchor)),
+    };
   });
   expect(scrollY).toBe(0);
-  expect(caret).toBe(long.length);
+  expect(inLastLine).toBe(true); // caret at the end of the note
 });
 
 test('grows the editor instead of scrolling inside it', async ({ page }) => {
@@ -315,7 +391,7 @@ test('grows the editor instead of scrolling inside it', async ({ page }) => {
   await editor(page).fill(long);
 
   const info = await page.evaluate(() => {
-    const el = document.querySelector('.editor') as HTMLTextAreaElement;
+    const el = document.querySelector('.cm-scroller') as HTMLElement;
     return {
       fieldScrolls: el.scrollHeight > el.clientHeight + 2,
       pageScrolls: document.documentElement.scrollHeight > window.innerHeight,
@@ -332,13 +408,13 @@ test('shrinks the editor back down when a new note starts', async ({ page }) => 
   await editor(page).fill(long);
   await press(page, 's');
 
-  const grown = await page.evaluate(() => Math.round(document.querySelector('.editor')!.getBoundingClientRect().height));
+  const grown = await page.evaluate(() => Math.round(document.querySelector('.cm-scroller')!.getBoundingClientRect().height));
   expect(grown).toBeGreaterThan(800);
 
   await press(page, 'e');
-  await expect(editor(page)).toHaveValue('');
+  await expectBody(page, '');
   await expect
-    .poll(() => page.evaluate(() => Math.round(document.querySelector('.editor')!.getBoundingClientRect().height)))
+    .poll(() => page.evaluate(() => Math.round(document.querySelector('.cm-scroller')!.getBoundingClientRect().height)))
     .toBeLessThan(800);
 });
 
@@ -386,5 +462,5 @@ test('debug overlay reads the database and leaves the app untouched', async ({ p
 
   await page.keyboard.press('Escape');
   await expect(page.getByText('varia · database')).toHaveCount(0);
-  await expect(editor(page)).toHaveValue('a note for the overlay');
+  await expectBody(page, 'a note for the overlay');
 });

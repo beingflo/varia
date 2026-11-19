@@ -17,7 +17,7 @@ export interface Handlers {
   heads(noteId: string): Version[];
   restoreVersion(noteId: string, versionId: string): boolean;
   items(noteId: string, showDone?: boolean): Item[];
-  addItem(noteId: string, text: string): string;
+  addItem(noteId: string, text: string, itemId?: string): string;
   toggleItem(itemId: string): void;
   setItemText(itemId: string, text: string): void;
   removeItem(itemId: string): void;

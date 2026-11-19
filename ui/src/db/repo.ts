@@ -265,7 +265,7 @@ export function restoreVersion(db: Db, noteId: string, versionId: string): boole
   return saveBody(db, noteId, version.body);
 }
 
-export function addItem(db: Db, noteId: string, text: string, itemId = crypto.randomUUID()): string {
+export function addItem(db: Db, noteId: string, text: string, itemId: string = crypto.randomUUID()): string {
   tx(db, () => {
     const last = db.get<{ ordering: number | null }>(
       'SELECT max(ordering) AS ordering FROM todo_item WHERE note_id = ? AND deleted = 0',

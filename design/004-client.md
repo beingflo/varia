@@ -27,8 +27,12 @@ a write path.
 
 ## Editing
 
-- **Notes**: a plain `<textarea>` with the Markdown source. A rendered reading view is a later
-  feature and must not change the storage format.
+- **Notes**: a CodeMirror 6 editor over the Markdown source. Highlighting, list continuation
+  (Enter continues `-`/`1.`, enters increment, an empty item exits the list), Tab nesting and fenced
+  code highlighting all live in the editor; the document is still plain text, so the log, history and
+  sync see exactly what a textarea would have written. The syntax highlighting is the reading aid: a
+  separate rendered view is not planned. Vim mode is a possible later addition (`PLAN.md`), the reason
+  CodeMirror was chosen over a hand-rolled editor or a WYSIWYG model.
 - **Snapshotting**: after ~1.5 s idle, plus on blur, on navigate away and on `visibilitychange →
   hidden`. If the body equals the parent version's body, no op is written.
 - **Todos**: rows of checkbox + text, an always-present empty row at the bottom for appending,
@@ -77,6 +81,9 @@ It is built to be unable to hurt the app:
 
 - Data layer and components run under vitest against `node:sqlite` (same SQLite version as the wasm
   build) through `db/inProcess.ts`, which exposes the identical handler surface the worker serves.
+  CodeMirror needs layout, so component tests substitute `editor/TextareaDouble` — same props, plain
+  textarea — while the real editor's behaviour (continuation, nesting, highlighting) is covered by
+  the browser tests.
 - The views are tested with `@solidjs/testing-library` against that repo, not a mock, so a test that
   clicks "restore" reads the same rows the app would.
 - Flow-level behaviour (persistence across reload, two tabs, the todo lifecycle) runs in Playwright

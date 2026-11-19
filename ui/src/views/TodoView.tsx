@@ -14,8 +14,7 @@ export default function TodoView(props: { id: string }) {
   const [saved, setSaved] = createSignal('');
   const [updated, setUpdated] = createSignal(0);
   const [editing, setEditing] = createSignal<string | null>(null);
-  // `pending` rows are shown immediately and replaced by the materialised list after the write.
-  const [items, setItems] = createSignal<(Item & { pending?: boolean })[]>([]);
+  const [items, setItems] = createSignal<Item[]>([]);
   let addInput: HTMLInputElement | undefined;
 
   const reload = async () => {
@@ -73,26 +72,17 @@ export default function TodoView(props: { id: string }) {
   const add = async () => {
     const text = draft().trim();
     if (!text) return;
+    const id = crypto.randomUUID();
     // One batch: the row appears and the field empties in the same frame, before the write.
     batch(() => {
       setItems([
         ...items(),
-        {
-          id: `pending:${crypto.randomUUID()}`,
-          note_id: props.id,
-          text,
-          done: 0,
-          ordering: Infinity,
-          deleted: 0,
-          updated: Date.now(),
-          stamps: '{}',
-          pending: true,
-        },
+        { id, note_id: props.id, text, done: 0, ordering: Number.MAX_SAFE_INTEGER, deleted: 0, updated: Date.now(), stamps: '{}' },
       ]);
       setDraft('');
     });
     try {
-      await repo.addItem(props.id, text);
+      await repo.addItem(props.id, text, id);
     } finally {
       await reconcile();
     }
@@ -107,9 +97,9 @@ export default function TodoView(props: { id: string }) {
   };
 
   // Every mutation paints first and writes after: the worker round trip never sits between the
-  // click and the change on screen.
+  // click and the change on screen. Ids are real from the first frame, so a row added a moment
+  // ago can already be checked off.
   const toggle = async (item: Item) => {
-    if (item.id.startsWith('pending:')) return;
     const done = item.done ? 0 : 1;
     batch(() =>
       setItems(
@@ -128,7 +118,6 @@ export default function TodoView(props: { id: string }) {
 
   const saveItem = async (item: Item, text: string) => {
     setEditing(null);
-    if (item.id.startsWith('pending:')) return;
     const value = text.trim();
     batch(() =>
       setItems(
@@ -168,19 +157,17 @@ export default function TodoView(props: { id: string }) {
                       <button type="button" class="item-text item-toggle" aria-pressed={item.done === 1}>
                         {item.text}
                       </button>
-                      <Show when={!item.pending}>
-                        <button
-                          type="button"
-                          class="edit"
-                          aria-label={`edit ${item.text}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditing(item.id);
-                          }}
-                        >
-                          Edit
-                        </button>
-                      </Show>
+                      <button
+                        type="button"
+                        class="edit"
+                        aria-label={`edit ${item.text}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditing(item.id);
+                        }}
+                      >
+                        Edit
+                      </button>
                     </span>
                   }
                 >

@@ -20,8 +20,8 @@ describe('Note list overlay', () => {
     renderWithRepo(() => <NoteList onOpen={() => {}} onClose={() => {}} />, repo);
 
     expect(await screen.findByText('coalesce the retries')).toBeTruthy();
-    expect(screen.getByText('work')).toBeTruthy();
-    expect(screen.getByText('1 open')).toBeTruthy();
+    // A list is marked with a trailing tilde, and carries its modification time like a note.
+    expect(screen.getByText('work ~')).toBeTruthy();
   });
 
   it('filters by search text across notes and items', async () => {
@@ -30,7 +30,7 @@ describe('Note list overlay', () => {
 
     fireEvent.input(screen.getByLabelText('search notes'), { target: { value: 'milk' } });
     await waitFor(() => expect(screen.queryByText('coalesce the retries')).toBeNull());
-    expect(screen.getByText('work')).toBeTruthy();
+    expect(screen.getByText('work ~')).toBeTruthy();
   });
 
   it('opens the highlighted note with Enter and the clicked one with a click', async () => {
@@ -38,11 +38,11 @@ describe('Note list overlay', () => {
     const onOpen = vi.fn();
     renderWithRepo(() => <NoteList onOpen={onOpen} onClose={() => {}} />, repo);
 
-    await screen.findByText('work');
+    await screen.findByText('work ~');
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByText('work'));
+    fireEvent.click(screen.getByText('work ~'));
     expect(onOpen).toHaveBeenLastCalledWith(expect.objectContaining({ id: list }));
   });
 
@@ -51,7 +51,7 @@ describe('Note list overlay', () => {
     const onOpen = vi.fn();
     renderWithRepo(() => <NoteList onOpen={onOpen} onClose={() => {}} />, repo);
 
-    await screen.findByText('work');
+    await screen.findByText('work ~');
     const listed = await repo.listNotes();
     fireEvent.keyDown(window, { key: 'j', ctrlKey: true });
     fireEvent.keyDown(window, { key: 'Enter' });
@@ -68,7 +68,7 @@ describe('Note list overlay', () => {
     const onOpen = vi.fn();
     renderWithRepo(() => <NoteList onOpen={onOpen} onClose={() => {}} />, repo);
 
-    await screen.findByText('work');
+    await screen.findByText('work ~');
     const listed = await repo.listNotes(); // same order the view got
     fireEvent.keyDown(window, { key: 'ArrowDown' });
     fireEvent.keyDown(window, { key: 'Enter' });
@@ -80,7 +80,7 @@ describe('Note list overlay', () => {
     const onOpen = vi.fn();
     renderWithRepo(() => <NoteList onOpen={onOpen} onClose={() => {}} />, repo);
 
-    await screen.findByText('work');
+    await screen.findByText('work ~');
     const listed = await repo.listNotes();
     const rows = document.querySelectorAll('.notes li');
     fireEvent.mouseOver(rows[1]);
@@ -94,7 +94,7 @@ describe('Note list overlay', () => {
     const { repo, list } = await seed();
     renderWithRepo(() => <NoteList onOpen={() => {}} onClose={() => {}} currentId={list} />, repo);
 
-    await screen.findByText('work');
+    await screen.findByText('work ~');
     const current = document.querySelector('.notes a[aria-current="true"]');
     expect(current?.textContent).toContain('work');
     expect(current?.querySelector('.dot')?.textContent).toBe('•');

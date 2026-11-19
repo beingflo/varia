@@ -93,8 +93,11 @@ export default function NoteList(props: {
                 <span class="dot" aria-hidden="true">
                   {note.id === props.currentId ? '•' : ''}
                 </span>
-                <span class={note.title ? 'title-text' : 'title-text muted'}>{note.title || '(untitled)'}</span>
-                <span class="muted small">{note.kind === 'todo' ? `${note.open_items} open` : ago(note.updated)}</span>
+                <span class={note.title ? 'title-text' : 'title-text muted'}>
+                  {note.title || '(untitled)'}
+                  {note.kind === 'todo' ? ' ~' : ''}
+                </span>
+                <span class="muted small">{ago(note.updated)}</span>
               </a>
             </li>
           )}

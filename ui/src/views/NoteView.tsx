@@ -1,5 +1,6 @@
 import { createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js';
 import History from '../components/History';
+import Editor, { type EditorApi } from '../editor/Editor';
 import { useRepo } from '../db/context';
 import { onCommand, onEditorFocus } from '../lib/commands';
 import { registerFlush } from '../lib/flush';
@@ -19,7 +20,7 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
   const [savedTags, setSavedTags] = createSignal('');
   const [updated, setUpdated] = createSignal(0);
   const [historyOpen, setHistoryOpen] = createSignal(false);
-  let editor: HTMLTextAreaElement | undefined;
+  let editor: EditorApi | undefined;
 
   // Bumped on every keystroke: a load that resolves after the user started typing must not
   // overwrite what they wrote (the body it read is the older baseline, kept as `saved`).
@@ -30,21 +31,8 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
   // read would return, so the follow-up load must not touch it.
   let ownNote: string | undefined;
 
-  // Caret at the end, page at the top: focusing a long note must not scroll it into view.
-  const focusEnd = () => {
-    const el = editor;
-    if (!el) return;
-    el.focus({ preventScroll: true });
-    el.setSelectionRange(el.value.length, el.value.length);
-  };
-
-  // The editor grows with its content; the page scrolls, never the field.
-  const autosize = () => {
-    const el = editor;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
-  };
+  // Caret at the end and the page at the top; the editor itself grows with its content.
+  const focusEnd = () => editor?.focusEnd();
 
   const load = async (id: string | undefined) => {
     const mine = ++generation;
@@ -62,9 +50,7 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
       setSavedTags('');
       setUpdated(0);
       requestAnimationFrame(() => {
-        autosize(); // a fresh draft starts at its initial height again
         focusEnd();
-        window.scrollTo({ top: 0 });
         signalViewReady();
       });
       return;
@@ -77,12 +63,10 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
     setTags(noteTags.join(', '));
     setSavedTags(noteTags.join(', '));
     setUpdated(note?.updated ?? 0);
-    // Size and signal in the same frame, so a caller waiting for "ready" never sees the old height.
+    // Focus and signal in the same frame, so a caller waiting for "ready" never sees the old state.
     requestAnimationFrame(() => {
       if (mine !== generation) return;
-      autosize();
       focusEnd();
-      window.scrollTo({ top: 0 });
       signalViewReady();
     });
   };
@@ -140,8 +124,6 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
 
   onMount(() => {
     focusEnd();
-    autosize();
-    window.addEventListener('resize', autosize);
     const off = [
       registerFlush(flush),
       onEditorFocus(focusEnd),
@@ -151,26 +133,24 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
         setHistoryOpen(!historyOpen());
       }),
     ];
-    onCleanup(() => {
-      off.forEach((unregister) => unregister());
-      window.removeEventListener('resize', autosize);
-    });
+    onCleanup(() => off.forEach((unregister) => unregister()));
   });
 
   return (
     <main class="page">
-      <textarea
-        ref={editor}
-        class="editor"
-        aria-label="note body"
+      <Editor
+        docKey={noteId() ?? 'draft'}
+        ariaLabel="note body"
         placeholder="Write something nice"
         value={body()}
-        onInput={(e) => {
+        onInput={(text) => {
           edits += 1;
-          setBody(e.currentTarget.value);
-          autosize();
+          setBody(text);
         }}
         onBlur={() => void flush()}
+        onReady={(api) => {
+          editor = api;
+        }}
       />
       <div class="meta">
         <input
