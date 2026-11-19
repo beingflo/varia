@@ -58,6 +58,21 @@ runtime caching of API responses because sync is application logic, not an HTTP 
 - Sync triggers on start/foreground/hidden plus a 60 s timer while visible; anything missed is caught
   up on next open.
 
+## Debug overlay
+
+`⌘/Ctrl+Shift+D` (or `?debug` in the URL, which is the only way on a phone) opens a read-only view of
+the local SQLite database: every table with its row count, the rows themselves, the op log included,
+and the selected row as pretty JSON.
+
+It is built to be unable to hurt the app:
+
+- loaded through a dynamic `import()` in its own chunk, so it costs the app nothing until opened;
+- mounted into a shadow root with its own stylesheet, so neither side's CSS can reach the other;
+- wrapped in an `ErrorBoundary` that renders a one-line failure inside the overlay;
+- the parent never reads a failed resource (that throws in Solid), it shows the error as text instead;
+- reads go through a whitelisted `debugTables`/`debugRows` handler — no arbitrary SQL from the UI — and
+  a failure there rejects that one call only.
+
 ## Tests
 
 - Data layer and components run under vitest against `node:sqlite` (same SQLite version as the wasm
@@ -67,7 +82,8 @@ runtime caching of API responses because sync is application logic, not an HTTP 
 - Flow-level behaviour (persistence across reload, two tabs, the todo lifecycle) runs in Playwright
   against a real server, because cross-origin isolation, OPFS and BroadcastChannel only exist there.
   The app sets `data-db="ready"` on `<html>` once the database answered; browser tests wait on that
-  instead of on view-specific markup.
+  instead of on view-specific markup. The debug overlay has its own flow test: it opens, reads the op
+  log, and closing it leaves the editor's contents untouched.
 - Engines: Chromium by default, Firefox via `VARIA_E2E_BROWSERS=firefox`, both passing. Playwright's
   WebKit cannot run these tests — its OPFS is broken in that build — so iOS is verified on a device
   instead. Tests assert observable database effects (a title appearing, a label changing after the

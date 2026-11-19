@@ -2,6 +2,8 @@
 import type { Db, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, Version } from './types';
 
 export type NoteFilter = { tag?: string; q?: string; kind?: NoteKind };
+export type DebugTable = { name: string; count: number };
+export type DebugPage = { columns: string[]; rows: Record<string, unknown>[]; total: number };
 
 /** Synchronous implementation, used inside the worker and directly in tests. */
 export interface Handlers {
@@ -23,6 +25,8 @@ export interface Handlers {
   tags(): string[];
   tagsOf(noteId: string): string[];
   unpushed(): Op[];
+  debugTables(): DebugTable[];
+  debugRows(table: string, offset?: number, limit?: number): DebugPage;
 }
 
 /** What views call: the same calls, asynchronous, across the worker boundary. */

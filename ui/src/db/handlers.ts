@@ -23,5 +23,7 @@ export function createHandlers(db: Db): Handlers {
     tags: () => repo.tags(db),
     tagsOf: (noteId) => repo.tagsOf(db, noteId),
     unpushed: () => repo.unpushed(db),
+    debugTables: () => repo.debugTables(db),
+    debugRows: (table, offset, limit) => repo.debugRows(db, table, offset, limit),
   };
 }

@@ -141,3 +141,24 @@ test('two tabs can write the same database', async ({ page, context }) => {
 
   await expect(page.getByText('written by tab two')).toBeVisible({ timeout: 10_000 });
 });
+
+test('debug overlay reads the database and leaves the app untouched', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await page.getByRole('button', { name: 'note' }).click();
+  const editor = page.getByLabel('note body');
+  await editor.fill('a note for the overlay');
+  await editor.blur();
+
+  await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+Shift+D`);
+  await expect(page.getByText('varia · database')).toBeVisible();
+
+  await page.getByLabel('table op', { exact: true }).click();
+  await expect(page.getByText('note_snapshot').first()).toBeVisible();
+  await page.getByLabel('table version').click();
+  await expect(page.getByText('a note for the overlay').first()).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByText('varia · database')).toHaveCount(0);
+  await expect(editor).toHaveValue('a note for the overlay');
+});

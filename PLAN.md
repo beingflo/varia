@@ -31,9 +31,10 @@ A usable offline notebook. No server, no accounts, no encryption.
 - [x] notes: list, create, edit Markdown, delete, tag
 - [x] todos: item list, check/uncheck, append, hide-done toggle, show-done
 - [x] history: version list per note with restore
-- [ ] history: per-item history UI for todos (the data and API are there, the view is not)
 - [x] search over note bodies and todo items
 - [x] PWA: installable, offline shell, persistence request (best effort)
+- [x] debug overlay: every table incl. the op log, row detail, `⌘/Ctrl+Shift+D` or `?debug`, isolated in
+      its own chunk, shadow root and error boundary
 - [x] tests: 38 vitest unit/component tests on the real schema, 7 Playwright flows covering
       persistence across reload, search, tags, restore, the todo lifecycle and two tabs — passing on
       Chromium and Firefox (`VARIA_E2E_BROWSERS=firefox`); Playwright's WebKit build has no working

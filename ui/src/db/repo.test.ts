@@ -244,3 +244,49 @@ describe('op log', () => {
     expect(repo.items(target, list, true).map((i) => i.text)).toEqual(['one', 'two']);
   });
 });
+
+describe('debug reads', () => {
+  it('lists every table with a count', () => {
+    const db = fresh();
+    const id = repo.createNote(db, 'note');
+    repo.saveBody(db, id, 'body');
+
+    const tables = repo.debugTables(db);
+    expect(tables.map((t) => t.name)).toContain('op');
+    expect(tables.find((t) => t.name === 'version')?.count).toBe(1);
+    expect(tables.find((t) => t.name === 'note')?.count).toBe(1);
+  });
+
+  it('pages rows and reports columns', () => {
+    const db = fresh();
+    const id = repo.createNote(db, 'note');
+    repo.saveBody(db, id, 'one');
+    repo.saveBody(db, id, 'two');
+    repo.saveBody(db, id, 'three');
+
+    const first = repo.debugRows(db, 'version', 0, 2);
+    expect(first.total).toBe(3);
+    expect(first.rows).toHaveLength(2);
+    expect(first.columns).toContain('parent_id');
+    expect(first.rows[0].body).toBe('three'); // newest first
+
+    const second = repo.debugRows(db, 'version', 2, 2);
+    expect(second.rows).toHaveLength(1);
+    expect(second.rows[0].body).toBe('one');
+  });
+
+  it('shows the op log in sequence order, newest first', () => {
+    const db = fresh();
+    const id = repo.createNote(db, 'note');
+    repo.saveBody(db, id, 'x');
+
+    const ops = repo.debugRows(db, 'op', 0, 10).rows;
+    expect(ops.map((o) => o.seq)).toEqual([2, 1]);
+    expect(ops[0].kind).toBe('note_snapshot');
+  });
+
+  it('refuses tables it does not know', () => {
+    const db = fresh();
+    expect(() => repo.debugRows(db, 'sqlite_master')).toThrow(/unknown table/);
+  });
+});

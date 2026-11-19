@@ -394,6 +394,45 @@ export function unpushed(db: Db, limit = 200): Op[] {
     .map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
 }
 
+// ---------------------------------------------------------------- debug reads
+
+/** Whitelisted, read-only: the debug overlay never gets arbitrary SQL. */
+const DEBUG_TABLES = [
+  'note', 'version', 'todo_item', 'todo_item_op', 'tag', 'note_tag', 'op', 'op_seen', 'sync_state', 'meta',
+] as const;
+
+const DEBUG_ORDER: Record<string, string> = {
+  note: 'updated DESC',
+  version: 'lamport DESC, device DESC',
+  todo_item: 'note_id, ordering',
+  todo_item_op: 'lamport DESC, device DESC',
+  op: 'device, seq DESC',
+};
+
+export type DebugTable = { name: string; count: number };
+export type DebugPage = { columns: string[]; rows: Record<string, unknown>[]; total: number };
+
+export function debugTables(db: Db): DebugTable[] {
+  return DEBUG_TABLES.map((name) => ({
+    name,
+    count: db.get<{ n: number }>(`SELECT count(*) AS n FROM ${name}`)?.n ?? 0,
+  }));
+}
+
+export function debugRows(db: Db, table: string, offset = 0, limit = 100): DebugPage {
+  if (!DEBUG_TABLES.includes(table as (typeof DEBUG_TABLES)[number])) throw new Error(`unknown table ${table}`);
+  const order = DEBUG_ORDER[table] ?? 'rowid';
+  const columns = db
+    .all<{ name: string }>('SELECT name FROM pragma_table_info(?)', [table])
+    .map((c) => c.name);
+  const rows = db.all<Record<string, unknown>>(`SELECT * FROM ${table} ORDER BY ${order} LIMIT ? OFFSET ?`, [
+    limit,
+    offset,
+  ]);
+  const total = db.get<{ n: number }>(`SELECT count(*) AS n FROM ${table}`)?.n ?? 0;
+  return { columns, rows, total };
+}
+
 export function markPushed(db: Db, ops: { device: string; seq: number }[]): void {
   tx(db, () => {
     for (const op of ops) db.run('UPDATE op SET pushed = 1 WHERE device = ? AND seq = ?', [op.device, op.seq]);
