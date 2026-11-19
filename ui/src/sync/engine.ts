@@ -5,7 +5,7 @@ import type { Repo } from '../db/api';
 import { flushAll } from '../lib/flush';
 import { enrolmentCode, newRootKey, opKey, parseEnrolmentCode } from './crypto';
 import { syncNow } from './client';
-import { httpTransport } from './http';
+import { httpTransport, SyncError } from './http';
 import type { Account, AccountStore } from './keystore';
 
 export type SyncStatus = {
@@ -18,6 +18,8 @@ export type SyncStatus = {
 };
 
 const PULL_EVERY = 60_000;
+/** Fallback backoff for a failure that does not say how long to wait. */
+const RETRY_SECONDS = 30;
 
 export type Engine = ReturnType<typeof createEngine>;
 
@@ -36,6 +38,7 @@ export function createEngine(options: {
 
   let account: Account | undefined;
   let running = false;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let pullTimer: ReturnType<typeof setInterval> | undefined;
   let attached = false;
   let queued = false;
@@ -63,6 +66,8 @@ export function createEngine(options: {
     try {
       await flushAll(); // unsaved edits become ops before they are pushed
       const result = await syncNow({ repo, key: account.key, token: account.token, transport });
+      // A backlog larger than five pages drains by chaining runs; the rate limiter paces it.
+      if (result.more) queued = true;
       patch({
         state: 'idle',
         last: Date.now(),
@@ -74,6 +79,10 @@ export function createEngine(options: {
     } catch (err) {
       patch({ state: 'error', error: err instanceof Error ? err.message : String(err), pending: await pendingCount() });
       console.warn(`sync failed (${reason})`, err);
+      // Rate limited or offline: try again on our own instead of waiting for the next trigger.
+      const wait = err instanceof SyncError && err.retryAfter ? err.retryAfter : RETRY_SECONDS;
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => void run('retry'), wait * 1000);
     } finally {
       running = false;
       if (queued) {
@@ -153,6 +162,7 @@ export function createEngine(options: {
 
   function stop(): void {
     attached = false;
+    clearTimeout(retryTimer);
     clearInterval(pullTimer);
     listeners.splice(0).forEach((off) => off());
   }

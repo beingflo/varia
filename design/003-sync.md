@@ -87,6 +87,10 @@ account and see the code for the first time.
   pending, and duplicates on the server make the retry harmless.
 - **An op that cannot be opened is skipped, not retried.** A wrong key or a damaged payload would
   otherwise pin the cursor forever; `syncNow` counts them in `skipped` and moves on.
+- **A pulled page is decrypted in parallel and applied in one transaction.** Per-op work was the
+  whole cost of a replay: one worker round trip, one commit and one view refresh each. Measured on
+  Chromium: a 500-op page costs ~21 ms of request and ~86 ms of apply; 400 ops land on a fresh
+  device in ~130 ms. The crypto was never the bottleneck.
 - **At most five push/pull rounds per call**, so a large backlog drains over several syncs instead of
   holding one request open.
 - **The local lamport clock is raised to the remote one** when an op is applied, otherwise the next

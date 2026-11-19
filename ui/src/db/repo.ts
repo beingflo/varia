@@ -86,6 +86,11 @@ export function applyOp(db: Db, op: Op): void {
   else throw new Error(`unknown op kind ${op.kind}`);
 }
 
+/** Applies a whole pulled page in one transaction: one commit per batch, not per op. */
+export function applyRemoteOps(db: Db, ops: Op[]): number {
+  return tx(db, () => ops.reduce((applied, op) => (applyRemoteOp(db, op) ? applied + 1 : applied), 0));
+}
+
 /** Apply an op that came from elsewhere; idempotent by `(device, seq)`. */
 export function applyRemoteOp(db: Db, op: Op): boolean {
   // The local clock must pass the remote one, or the next local write loses the tie-break.
@@ -409,7 +414,7 @@ export function tagsOf(db: Db, noteId: string): string[] {
   );
 }
 
-export function unpushed(db: Db, limit = 200): Op[] {
+export function unpushed(db: Db, limit = 500): Op[] {
   return db
     .all<{ device: string; seq: number; kind: OpKind; note_id: string; payload: string; lamport: number; created: number }>(
       'SELECT * FROM op WHERE pushed = 0 ORDER BY device, seq LIMIT ?',

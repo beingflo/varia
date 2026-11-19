@@ -3,6 +3,7 @@
 // echo of what a request just pushed.
 import { describe, expect, it } from 'vitest';
 import type { Repo } from '../db/api';
+import type { Op } from '../db/types';
 import { testRepo } from '../db/inProcess';
 import { newRootKey, opKey, seal } from './crypto';
 import { syncNow, type SyncResponse, type Transport, type WireOp } from './client';
@@ -36,6 +37,17 @@ function fakeServer() {
 async function pair() {
   const key = await opKey(newRootKey());
   return { key, sender: testRepo('device-a'), receiver: testRepo('device-b') };
+}
+
+/** Records each `applyRemote` call, to pin the batching: one call per pulled page, never per op. */
+function spied(repo: Repo) {
+  const batches: Op[][] = [];
+  const applyRemote = repo.applyRemote.bind(repo);
+  repo.applyRemote = async (ops) => {
+    batches.push(ops);
+    return applyRemote(ops);
+  };
+  return { repo, batches };
 }
 
 async function writeNote(repo: Repo, body: string) {
@@ -95,6 +107,37 @@ describe('sync', () => {
     // Nothing left: a further sync is a no-op, not a loop.
     const again = await syncNow({ repo: receiver, key, token: 't', transport: server.transport });
     expect(again).toMatchObject({ pushed: 0, pulled: 0, cursor: 4 });
+  });
+
+  // The trap: applying op by op meant one worker round trip, one commit and one view refresh each,
+  // which turned a 400-op replay into seconds of visible history churn.
+  it('applies a pulled backlog in one batch per page, not one call per op', async () => {
+    const { key, sender } = await pair();
+    const server = fakeServer();
+    const id = await sender.createNote('note');
+    for (const body of ['one', 'two', 'three']) await sender.saveBody(id, body);
+    await syncNow({ repo: sender, key, token: 't', transport: server.transport });
+
+    const { repo: receiver, batches } = spied(testRepo('device-b'));
+    await syncNow({ repo: receiver, key, token: 't', transport: server.transport });
+
+    // The fake service serves two ops per page: one note_meta plus three snapshots is four ops,
+    // two pages, so two calls.
+    expect(batches.map((batch) => batch.length)).toEqual([2, 2]);
+    expect((await receiver.getNote(id))?.body).toBe('three');
+  });
+
+  it('seals a whole outbox in one pass rather than op by op', async () => {
+    const { key, sender, receiver } = await pair();
+    const server = fakeServer();
+    const id = await writeNote(sender, 'body');
+    const sent = await syncNow({ repo: sender, key, token: 't', transport: server.transport });
+    expect(sent.pushed).toBe(2); // note_meta plus one snapshot, both in the single request
+    expect(server.stored).toHaveLength(2);
+
+    const received = await syncNow({ repo: receiver, key, token: 't', transport: server.transport });
+    expect(received.pulled).toBe(2);
+    expect((await receiver.getNote(id))?.body).toBe('body');
   });
 
   it('skips an op it cannot decrypt and still advances the cursor', async () => {
