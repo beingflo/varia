@@ -88,6 +88,8 @@ export function applyOp(db: Db, op: Op): void {
 
 /** Apply an op that came from elsewhere; idempotent by `(device, seq)`. */
 export function applyRemoteOp(db: Db, op: Op): boolean {
+  // The local clock must pass the remote one, or the next local write loses the tie-break.
+  if (op.lamport > Number(meta(db, 'lamport') ?? '0')) setMetaValue(db, 'lamport', String(op.lamport));
   const seen = db.get('SELECT 1 FROM op_seen WHERE device = ? AND seq = ?', [op.device, op.seq]);
   if (seen) return false;
   db.run('INSERT INTO op_seen(device, seq) VALUES(?, ?)', [op.device, op.seq]);
@@ -453,6 +455,14 @@ export function debugRows(db: Db, table: string, offset = 0, limit = 100): Debug
   ]);
   const total = db.get<{ n: number }>(`SELECT count(*) AS n FROM ${table}`)?.n ?? 0;
   return { columns, rows, total };
+}
+
+export function syncCursor(db: Db): number {
+  return Number(meta(db, 'cursor') ?? '0');
+}
+
+export function setSyncCursor(db: Db, cursor: number): void {
+  setMetaValue(db, 'cursor', String(cursor));
 }
 
 export function markPushed(db: Db, ops: { device: string; seq: number }[]): void {

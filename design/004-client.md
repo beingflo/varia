@@ -35,7 +35,8 @@ on screen. Measured on Firefox: a reload 0 ms after a save loses the write, 50 m
 
 Not the durability pragmas: `journal_mode=DELETE` and `synchronous=FULL` produce identical results,
 so it is the VFS write path, not commit syncing. What is not lost is anything the user did before
-that window, and the 1.5 s snapshot idle timer keeps the gap to the last keystroke small.
+that window, and commits are only made on blur, `⌘S` or leaving the view, so the exposure is the
+last edit rather than the last keystroke.
 
 Mitigation, if it ever bites in practice: flush at `pagehide` inside the worker (close and reopen the
 connection, or hold the unload for a settle delay). Not done: the fix costs a DB lifecycle change for
@@ -56,8 +57,10 @@ does; a static host needs the SPA fallback configured.
   sync see exactly what a textarea would have written. The syntax highlighting is the reading aid: a
   separate rendered view is not planned. Vim mode is a possible later addition (`PLAN.md`), the reason
   CodeMirror was chosen over a hand-rolled editor or a WYSIWYG model.
-- **Snapshotting**: after ~1.5 s idle, plus on blur, on navigate away and on `visibilitychange →
-  hidden`. If the body equals the parent version's body, no op is written.
+- **Snapshotting**: typing writes nothing. A snapshot op is committed when the editor loses focus,
+  on `⌘S`, before the note list or another note is opened, before history opens, on `⌘D`/`⌘E`/`⌘⇧E`,
+  and on `visibilitychange → hidden`. There is no idle timer: a note that is typed and never blurred,
+  saved or left is not written. If the body equals the current one, no op is written.
 - **Todos**: rows of checkbox + text, an always-present empty row at the bottom for appending,
   "show done" toggle (default off). Checking an item writes one `todo_item` op.
 - **History**: the version list for a note with a "restore this version" action, and per-item history
@@ -72,6 +75,17 @@ next to it. No progress bars, no conflict dialogs in v1.
 A device that has a token but an empty database pulls from cursor 0 and replays; this is also the
 recovery path after iOS evicts storage, so it must be fast enough to feel like a first-run load
 rather than a restore.
+
+## Sync
+
+`ui/src/sync/` holds the whole client side: `crypto.ts` (envelope and enrolment code), `client.ts`
+(one push-then-pull round trip), `engine.ts` (triggers, status, account) and `keystore.ts`
+(IndexedDB). The engine is created once in `App` and handed down through `SyncProvider`, so the
+overlay in `components/Sync.tsx` is testable against a fake engine.
+
+The view shows only what the engine's status says: `synced now · nothing pending`, `3 pending`,
+`sync failed — 429 rate_limited`, usage against the cap, and how old the last sync is. The inline
+status line next to the note stamp is still open (`PLAN.md` phase 3).
 
 ## PWA
 

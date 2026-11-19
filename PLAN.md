@@ -43,14 +43,17 @@ the readiness marker the browser tests wait on.
 ## Phase 2: Sync
 
 - [x] service: signup, tokens, `/api/sync`, cap, rate limits, WAL, headers (`server/`, 10 tests)
-- [ ] client: key + enrolment code (text + download), device id, outbox, cursors, triggers
+- [x] client: key, envelope, enrolment code, outbox, cursors (`ui/src/sync/`, 11 tests + one guarded
+      test against a live service)
+- [x] client: triggers (push on write, start, foreground, 60 s timer, hidden flush), enrolment
+      overlay (`⌘⇧S`: paste a code or create an account), sync status and manual sync
 - [ ] conflict policy as decided: highest lamport head wins, both branches retained
 - [ ] single binary serving the bundled UI, deployed like acta
 
 ## Phase 3: Mobile polish
 
 - [ ] iOS install flow and first-run guidance
-- [ ] sync status line and manual sync
+- [ ] inline sync status next to the note stamp (the `⌘⇧S` overlay already shows it)
 - [ ] eviction recovery: token present + empty database → full re-pull from cursor 0
 - [ ] measure cold-start replay and decide whether checkpoints are needed
 

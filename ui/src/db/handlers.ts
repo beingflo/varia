@@ -24,6 +24,10 @@ export function createHandlers(db: Db): Handlers {
     tags: () => repo.tags(db),
     tagsOf: (noteId) => repo.tagsOf(db, noteId),
     unpushed: () => repo.unpushed(db),
+    markPushed: (ops) => repo.markPushed(db, ops),
+    applyRemote: (op) => repo.applyRemoteOp(db, op),
+    syncCursor: () => repo.syncCursor(db),
+    setSyncCursor: (cursor) => repo.setSyncCursor(db, cursor),
     debugTables: () => repo.debugTables(db),
     debugRows: (table, offset, limit) => repo.debugRows(db, table, offset, limit),
   };

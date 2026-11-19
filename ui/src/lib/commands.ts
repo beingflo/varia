@@ -1,5 +1,14 @@
 // One key map, one dispatcher. Views register what they can do; unclaimed commands do nothing.
-export type Command = 'list' | 'new-note' | 'new-list' | 'delete' | 'save' | 'history' | 'toggle-done' | 'debug';
+export type Command =
+  | 'list'
+  | 'new-note'
+  | 'new-list'
+  | 'delete'
+  | 'save'
+  | 'history'
+  | 'toggle-done'
+  | 'sync'
+  | 'debug';
 
 const handlers = new Map<Command, () => void>();
 
@@ -38,7 +47,7 @@ export function commandFor(event: KeyboardEvent): Command | undefined {
   if (!(event.metaKey || event.ctrlKey)) return undefined;
   const key = event.key.toLowerCase();
   if (event.shiftKey) {
-    return { e: 'new-list', h: 'history', a: 'toggle-done', d: 'debug' }[key] as Command | undefined;
+    return { e: 'new-list', h: 'history', a: 'toggle-done', s: 'sync', d: 'debug' }[key] as Command | undefined;
   }
   if (event.altKey) {
     return { k: 'list', e: 'new-note', d: 'delete', s: 'save', a: 'toggle-done', h: 'history' }[key] as

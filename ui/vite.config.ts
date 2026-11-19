@@ -17,6 +17,10 @@ const https =
     ? { cert: readFileSync(process.env.VARIA_HTTPS_CERT), key: readFileSync(process.env.VARIA_HTTPS_KEY) }
     : undefined;
 
+// The dev and preview servers only have the shell; `/api` lives in the Rust service. Without this
+// proxy, signup answers 404 and the sync panel shows "signup failed: 404".
+const api = { '/api': { target: process.env.VARIA_API ?? 'http://127.0.0.1:8099', changeOrigin: false } };
+
 export default defineConfig({
   plugins: [
     solid(),
@@ -29,6 +33,6 @@ export default defineConfig({
   ],
   worker: { format: 'es' },
   optimizeDeps: { exclude: ['@sqlite.org/sqlite-wasm'] },
-  server: { headers: isolation, https, host: Boolean(https) },
-  preview: { headers: isolation, https, host: Boolean(https) },
+  server: { headers: isolation, https, host: Boolean(https), proxy: api },
+  preview: { headers: isolation, https, host: Boolean(https), proxy: api },
 });

@@ -1,7 +1,13 @@
-// Main-thread proxy. Writes ping other tabs so their views re-read instead of going stale.
+// Main-thread proxy. Every write notifies this tab's own listeners and pings the other tabs, so
+// views (and the sync trigger) never depend on a BroadcastChannel echo that never arrives.
 import type { Handlers, Repo } from './api';
 
-const WRITES = new Set<keyof Handlers>(['createNote', 'saveBody', 'setNoteMeta', 'restoreVersion', 'addItem', 'toggleItem', 'setItemText', 'removeItem']);
+// Data writes only: sync bookkeeping (`markPushed`, `setSyncCursor`) must not look like a local edit,
+// or every sync would schedule the next one.
+const WRITES = new Set<keyof Handlers>([
+  'createNote', 'saveBody', 'setNoteMeta', 'restoreVersion', 'addItem', 'toggleItem', 'setItemText', 'setItemDepth',
+  'removeItem', 'applyRemote',
+]);
 
 export function createClient(worker: Worker, channel = new BroadcastChannel('varia')): Repo & { onChange(fn: () => void): void } {
   const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
@@ -33,7 +39,12 @@ export function createClient(worker: Worker, channel = new BroadcastChannel('var
       pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
       worker.postMessage({ id, method, args });
     }).then((result) => {
-      if (WRITES.has(method)) channel.postMessage(method);
+      // A write that reports `false` wrote nothing (an unchanged body, a stale restore): no ping.
+      if (WRITES.has(method) && result !== false) {
+        // BroadcastChannel does not deliver to the sender, so the local listeners are called here.
+        listeners.forEach((fn) => fn());
+        channel.postMessage(method);
+      }
       return result;
     });
   }
@@ -42,7 +53,7 @@ export function createClient(worker: Worker, channel = new BroadcastChannel('var
   for (const method of [
     'deviceId', 'listNotes', 'getNote', 'createNote', 'saveBody', 'setNoteMeta', 'versions', 'heads',
     'restoreVersion', 'items', 'addItem', 'toggleItem', 'setItemText', 'setItemDepth', 'removeItem', 'itemHistory',
-    'tags', 'tagsOf', 'unpushed', 'debugTables', 'debugRows',
+    'tags', 'tagsOf', 'unpushed', 'markPushed', 'applyRemote', 'syncCursor', 'setSyncCursor', 'debugTables', 'debugRows',
   ] as (keyof Handlers)[]) {
     repo[method] = (...args) => call(method, args);
   }

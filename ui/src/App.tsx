@@ -1,9 +1,13 @@
 import { createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js';
 import HistoryHost from './components/History';
+import Sync from './components/Sync';
 import { useRepo } from './db/context';
 import { focusEditor, onCommand } from './lib/commands';
 import { flushAll } from './lib/flush';
 import { armViewReady } from './lib/ready';
+import { createEngine } from './sync/engine';
+import { SyncProvider } from './sync/context';
+import { idbAccount } from './sync/keystore';
 import NoteList from './views/NoteList';
 import NoteView from './views/NoteView';
 import TodoView from './views/TodoView';
@@ -15,7 +19,9 @@ export default function App() {
   const repo = useRepo();
   // Deep links are paths (/note/<id>): the host must serve index.html for them (an spa fallback).
   const linkedId = location.pathname.match(/\/note\/([\w-]+)/)?.[1] ?? null;
+  const engine = createEngine({ repo, store: idbAccount });
   const [open, setOpen] = createSignal<Open>({ kind: 'note' });
+  const [syncOpen, setSyncOpen] = createSignal(false);
   const [linked, setLinked] = createSignal(linkedId === null);
   const [listOpen, setListOpen] = createSignal(false);
 
@@ -29,6 +35,8 @@ export default function App() {
   });
 
   onMount(() => {
+    engine.start();
+    onCleanup(() => engine.stop());
     void (async () => {
       const note = linkedId ? await repo.getNote(linkedId) : undefined;
       if (note) setOpen({ kind: note.kind, id: note.id });
@@ -59,6 +67,10 @@ export default function App() {
         setListOpen(false);
         setOpen({ kind: 'todo', id: await repo.createNote('todo') });
       }),
+      onCommand('sync', async () => {
+        setListOpen(false);
+        setSyncOpen(true);
+      }),
       onCommand('delete', async () => {
         // Flush first: a draft just saved by ⌘S only has an id once its flush finished.
         await flushAll();
@@ -73,7 +85,7 @@ export default function App() {
   });
 
   return (
-    <>
+    <SyncProvider engine={engine}>
       <Show when={open().kind === 'note'} fallback={<TodoView id={(open() as { id: string }).id} />}>
         <NoteView id={open().id} onCreated={(id) => setOpen({ kind: 'note', id })} />
       </Show>
@@ -102,6 +114,9 @@ export default function App() {
           }}
         />
       </Show>
-    </>
+      <Show when={syncOpen()}>
+        <Sync onClose={() => setSyncOpen(false)} />
+      </Show>
+    </SyncProvider>
   );
 }

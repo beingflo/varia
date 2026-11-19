@@ -79,4 +79,15 @@ input[type='search']::-webkit-search-cancel-button { display: none; }
 
 .muted { color: var(--muted); }
 .small { font-size: 0.8rem; }
+/* The enrolment code: one long string, read out loud or copied, so it wraps instead of scrolling. */
+.code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem; line-height: 1.5; overflow-wrap: anywhere;
+  border: 1px solid var(--line); border-radius: 3px; padding: 0.5rem 0.6rem; margin: 0.6rem 0;
+}
+.overlay[aria-label='sync'] p { margin: 0 0 0.7rem; }
+.overlay[aria-label='sync'] input {
+  border: 1px solid var(--line); border-radius: 3px; padding: 0.5rem 0.6rem;
+}
+.overlay[aria-label='sync'] input:focus { border-color: var(--muted); }
 .warn { color: var(--warn); }

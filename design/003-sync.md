@@ -60,18 +60,37 @@ Errors are boring on purpose: `401` bad token, `413` op or body too large, `429`
 
 - op ≤ 4 MB, request ≤ 16 MB.
 - 500 MB of stored ciphertext per account, counted as `sum(length(ciphertext))`.
-- `/api/sync`: token bucket, burst 10, refill 30/min. A 1.5 s snapshot debounce means normal writing
-  produces ~30 pushes an hour, so anything tighter throttles ordinary use.
+- `/api/sync`: token bucket, burst 10, refill 30/min. Commits are coarse (blur, `⌘S`, navigation),
+  so ordinary writing produces a push per save rather than per keystroke, so anything tighter throttles ordinary use.
 - `/api/signup`: 1/min per IP.
 
 ## When it runs
 
-Push after a local change settles (the same ~1.5 s debounce that writes ops), pull on app start and
-on foreground, flush on `visibilitychange → hidden`, plus a 60 s timer while visible and a manual
-"sync now". No websockets, no push notifications: on iOS a socket dies with the tab anyway.
+Push immediately after a local write (a burst of writes coalesces into at most one follow-up
+request per round trip), pull on app start and on foreground, flush on `visibilitychange → hidden`,
+plus a 60 s timer while visible and a manual "sync now" (`⌘⇧S`, then Enter). No websockets, no push
+notifications: on iOS a socket dies with the tab anyway.
 
 Every trigger is best-effort. Failure is silent and retried with backoff; the UI carries the state
 ("synced", "3 changes pending", "never synced").
+
+The account (token plus the non-extractable AES key) lives in IndexedDB, the only place a CryptoKey
+can be stored without exporting it. The root key is never written anywhere: signup imports it once
+and shows the enrolment code the one time it can exist, which is also why a lost code is a lost
+account. `⌘⇧S` opens the sync overlay: paste a code, or press Enter on the empty field to create an
+account and see the code for the first time.
+
+## Implementation notes
+
+- **The outbox is the op log itself.** `op.pushed` is the queue flag, so a push never copies ops
+  anywhere; `markPushed` runs only after the server answered 200. A failed push leaves everything
+  pending, and duplicates on the server make the retry harmless.
+- **An op that cannot be opened is skipped, not retried.** A wrong key or a damaged payload would
+  otherwise pin the cursor forever; `syncNow` counts them in `skipped` and moves on.
+- **At most five push/pull rounds per call**, so a large backlog drains over several syncs instead of
+  holding one request open.
+- **The local lamport clock is raised to the remote one** when an op is applied, otherwise the next
+  local write would lose the tie-break against the device it just pulled from.
 
 ## Conflict
 
