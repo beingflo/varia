@@ -29,3 +29,14 @@ Take the first option that fully works:
 - A shortcut with a known limit gets a code comment in this form: `shortcut: <the limit>, <when to upgrade>`.
 
 Never cut: validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs, anything the user asked for.
+
+## Version control: the user owns it
+
+Never run a mutating git or jj command (`commit`, `add`, `rebase`, `branch`, `squash`, `push`, …).
+Reading (`git log`, `git diff`, `jj log`) is fine. If a change warrants a commit, say so.
+
+## Design docs
+
+`design/*.md` and `PLAN.md` describe the system at a high level. When a change alters the schema,
+the sync protocol, client structure, deployment or the phases, update the matching doc in the same
+piece of work. Keep edits crisp and high-level, and trim before adding.
