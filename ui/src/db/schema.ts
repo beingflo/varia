@@ -84,7 +84,11 @@ CREATE TABLE sync_state(
 );
 `;
 
-const migrations: string[] = [migration1];
+// Nesting: items are a flat, ordered table with a depth, so children are the following rows with
+// a greater depth. No FK, no tree table, and the sync payload stays one row per change.
+const migration2 = `ALTER TABLE todo_item ADD COLUMN depth INTEGER NOT NULL DEFAULT 0;`;
+
+const migrations: string[] = [migration1, migration2];
 
 export function migrate(db: Db): void {
   const row = db.get<{ user_version: number }>('PRAGMA user_version');

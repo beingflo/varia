@@ -172,7 +172,7 @@ function applyTodoOp(db: Db, op: Op & { payload: ItemChange }): void {
   const fields = change.fields;
   const applied: Record<string, unknown> = {};
 
-  for (const field of ['text', 'done', 'ordering', 'deleted'] as const) {
+  for (const field of ['text', 'done', 'ordering', 'deleted', 'depth'] as const) {
     const value = fields[field];
     if (value === undefined) continue;
     if (!beats(stampOf(op), stamps[field])) continue;
@@ -182,14 +182,15 @@ function applyTodoOp(db: Db, op: Op & { payload: ItemChange }): void {
 
   if (!row) {
     db.run(
-      `INSERT INTO todo_item(id, note_id, text, done, ordering, deleted, updated, stamps)
-       VALUES(?,?,?,?,?,?,?,?)`,
+      `INSERT INTO todo_item(id, note_id, text, done, ordering, depth, deleted, updated, stamps)
+       VALUES(?,?,?,?,?,?,?,?,?)`,
       [
         change.item_id,
         change.note_id,
         (applied.text as string) ?? '',
         (applied.done as number) ?? 0,
         (applied.ordering as number) ?? 0,
+        (applied.depth as number) ?? 0,
         (applied.deleted as number) ?? 0,
         op.created,
         JSON.stringify(stamps),
@@ -200,12 +201,13 @@ function applyTodoOp(db: Db, op: Op & { payload: ItemChange }): void {
 
   if (Object.keys(applied).length === 0) return;
   db.run(
-    `UPDATE todo_item SET text = ?, done = ?, ordering = ?, deleted = ?, updated = ?, stamps = ?
+    `UPDATE todo_item SET text = ?, done = ?, ordering = ?, depth = ?, deleted = ?, updated = ?, stamps = ?
      WHERE id = ?`,
     [
       (applied.text as string) ?? row.text,
       (applied.done as number) ?? row.done,
       (applied.ordering as number) ?? row.ordering,
+      (applied.depth as number) ?? row.depth,
       (applied.deleted as number) ?? row.deleted,
       Math.max(row.updated, op.created),
       JSON.stringify(stamps),
@@ -265,7 +267,14 @@ export function restoreVersion(db: Db, noteId: string, versionId: string): boole
   return saveBody(db, noteId, version.body);
 }
 
-export function addItem(db: Db, noteId: string, text: string, itemId: string = crypto.randomUUID()): string {
+export function addItem(
+  db: Db,
+  noteId: string,
+  text: string,
+  itemId: string = crypto.randomUUID(),
+  depth = 0,
+  ordering?: number,
+): string {
   tx(db, () => {
     const last = db.get<{ ordering: number | null }>(
       'SELECT max(ordering) AS ordering FROM todo_item WHERE note_id = ? AND deleted = 0',
@@ -274,7 +283,7 @@ export function addItem(db: Db, noteId: string, text: string, itemId: string = c
     appendOp(db, 'todo_item', noteId, {
       item_id: itemId,
       note_id: noteId,
-      fields: { text, done: false, deleted: false, ordering: between(last?.ordering ?? null, null) },
+      fields: { text, done: false, deleted: false, depth, ordering: ordering ?? between(last?.ordering ?? null, null) },
     });
   });
   return itemId;
@@ -289,6 +298,12 @@ export function setItemText(db: Db, itemId: string, text: string): void {
   const item = mustItem(db, itemId);
   if (item.text === text) return;
   changeItem(db, item, { text });
+}
+
+export function setItemDepth(db: Db, itemId: string, depth: number): void {
+  const item = mustItem(db, itemId);
+  if (item.depth === depth) return;
+  changeItem(db, item, { depth });
 }
 
 export function removeItem(db: Db, itemId: string): void {

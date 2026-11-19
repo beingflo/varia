@@ -46,15 +46,16 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--muted); outline
 }
 .title { width: 100%; font-size: 1.4rem; font-weight: 400; margin-bottom: 0.8rem; }
 .items { list-style: none; margin: 0; padding: 0; }
-.items li { position: relative; display: flex; align-items: baseline; gap: 0.5rem; padding: 0.1rem 0; }
+.items li { position: relative; display: flex; align-items: baseline; gap: 0.55rem; padding: 0.1rem 0; }
 .items li.done .item-text { color: var(--muted); text-decoration: line-through; }
-.item-row { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 0.55rem; cursor: pointer; }
-.item-text { min-width: 0; font: inherit; text-align: left; }
-.item-input { flex: 1; }
-.item-toggle { color: inherit; }
-.edit { color: var(--muted); font-size: 0.7rem; opacity: 0; }
-.items li:hover .edit, .edit:focus-visible { opacity: 1; }
-.add { width: 100%; padding: 0.1rem 0; margin: 0; }
+.bullet { flex: none; width: 4px; height: 4px; border-radius: 50%; background: var(--ink); align-self: center; }
+.item-body { position: relative; flex: 1; min-width: 0; display: flex; }
+.item-text { flex: 1; min-width: 0; }
+.item-warn { position: absolute; top: 0.1rem; color: var(--warn); pointer-events: none; }
+.item-add { display: flex; align-items: baseline; gap: 0.55rem; padding: 0.1rem 0; }
+.item-add .bullet { background: color-mix(in srgb, var(--ink) 18%, transparent); }
+.item-add.filled .bullet { background: var(--ink); }
+.add { flex: 1; min-width: 0; padding: 0; margin: 0; }
 
 /* Overlays: fullscreen and opaque, never a dimmed panel over content. */
 .overlay {

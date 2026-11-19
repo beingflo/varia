@@ -53,6 +53,8 @@ export interface Item {
   text: string;
   done: number;
   ordering: number;
+  /** 0 = top level; children are the following rows with a greater depth. */
+  depth: number;
   deleted: number;
   updated: number;
   /** Per-field last-writer stamps, same shape as `Note.stamps`. */
@@ -65,6 +67,7 @@ export interface ItemFields {
   done?: boolean;
   deleted?: boolean;
   ordering?: number;
+  depth?: number;
 }
 
 export interface ItemChange {

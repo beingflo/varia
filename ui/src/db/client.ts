@@ -41,7 +41,7 @@ export function createClient(worker: Worker, channel = new BroadcastChannel('var
   const repo = {} as Record<string, (...args: unknown[]) => Promise<unknown>>;
   for (const method of [
     'deviceId', 'listNotes', 'getNote', 'createNote', 'saveBody', 'setNoteMeta', 'versions', 'heads',
-    'restoreVersion', 'items', 'addItem', 'toggleItem', 'setItemText', 'removeItem', 'itemHistory',
+    'restoreVersion', 'items', 'addItem', 'toggleItem', 'setItemText', 'setItemDepth', 'removeItem', 'itemHistory',
     'tags', 'tagsOf', 'unpushed', 'debugTables', 'debugRows',
   ] as (keyof Handlers)[]) {
     repo[method] = (...args) => call(method, args);

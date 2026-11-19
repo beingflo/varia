@@ -137,7 +137,7 @@ test('restores an old version from history', async ({ page }) => {
   await expectBody(page, 'first draft');
 });
 
-test('runs a todo list: add, click to check off, show done, edit, delete', async ({ page }) => {
+test('runs a todo list: add, edit in place, check off with cmd, delete', async ({ page }) => {
   await page.goto('/');
   await ready(page);
   await page.keyboard.press(`${MOD}+Shift+E`);
@@ -151,33 +151,113 @@ test('runs a todo list: add, click to check off, show done, edit, delete', async
   await title.fill('work');
   await press(page, 's');
 
-  await expect(add).toHaveAttribute('placeholder', 'todo');
-  await add.fill('buy milk');
-  await add.press('Enter');
-  await add.fill('book dentist');
-  await add.press('Enter');
-  await expect(page.getByRole('button', { name: 'buy milk', exact: true })).toBeVisible();
+  for (const text of ['buy milk', 'book dentist']) {
+    await add.fill(text);
+    await add.press('Enter');
+    await expect(page.getByLabel(text, { exact: true })).toBeVisible();
+  }
+  await expect(page.locator('.items li .bullet')).toHaveCount(2);
 
-  // Checking off is a click on the row itself.
-  await page.getByRole('button', { name: 'buy milk', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'buy milk', exact: true })).toHaveCount(0);
+  // Always editable: click the text, keep typing.
+  const milk = page.getByLabel('buy milk', { exact: true });
+  await milk.click();
+  await milk.evaluate((el) => (el as HTMLInputElement).setSelectionRange(el.value.length, el.value.length));
+  await page.keyboard.type(' and eggs');
+  await title.click(); // blur saves
+  await expect(page.getByLabel('buy milk and eggs', { exact: true })).toBeVisible();
 
+  // A plain click only moves the caret, it does not check the item off.
+  await page.getByLabel('buy milk and eggs', { exact: true }).click();
+  await expect(page.getByLabel('buy milk and eggs', { exact: true })).toBeVisible();
+
+  // Cmd+click checks it off.
+  await page.getByLabel('buy milk and eggs', { exact: true }).click({ modifiers: ['Meta'] });
+  await expect(page.getByLabel('buy milk and eggs', { exact: true })).toHaveCount(0);
   await page.keyboard.press(`${MOD}+Shift+A`);
-  await expect(page.getByRole('button', { name: 'buy milk', exact: true })).toBeVisible();
+  await expect(page.getByLabel('buy milk and eggs', { exact: true })).toBeVisible();
 
-  // Editing appears as a small button on hover.
-  await page.getByRole('button', { name: 'book dentist', exact: true }).hover();
-  await page.getByRole('button', { name: 'edit book dentist' }).click();
-  const item = page.getByLabel('edit item');
-  await item.fill('book dentist urgently');
-  await item.press('Enter');
-  await expect(page.getByRole('button', { name: 'book dentist urgently', exact: true })).toBeVisible();
+  // Emptying an item deletes it.
+  const dentist = page.getByLabel('book dentist', { exact: true });
+  await dentist.fill('');
+  await title.click();
+  await expect(page.getByLabel('book dentist', { exact: true })).toHaveCount(0);
+});
 
-  await page.getByRole('button', { name: 'book dentist urgently', exact: true }).hover();
-  await page.getByRole('button', { name: 'edit book dentist urgently' }).click();
-  await page.getByLabel('edit item').fill('');
-  await page.getByLabel('edit item').press('Enter');
-  await expect(page.getByRole('button', { name: 'book dentist urgently', exact: true })).toHaveCount(0);
+test('nests items with tab, enters at the same level, and steps out when empty', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await page.keyboard.press(`${MOD}+Shift+E`);
+  const add = page.getByLabel('new item');
+  for (const text of ['parent', 'child']) {
+    await add.fill(text);
+    await add.press('Enter');
+  }
+
+  const indentOf = (index: number) =>
+    page.locator('.items li').nth(index).evaluate((el) => getComputedStyle(el).paddingLeft);
+
+  await page.getByLabel('child', { exact: true }).click();
+  await page.keyboard.press('Tab');
+  await expect.poll(() => indentOf(1)).toBe('22.4px'); // one level = 1.4rem
+
+  // Enter on a nested item adds a sibling at the same level, not at the top, and the caret moves
+  // into it.
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.items li')).toHaveCount(3);
+  await expect(page.locator('.item-text').nth(2)).toBeFocused();
+  await expect.poll(() => indentOf(2)).toBe('22.4px');
+
+  // Enter again on the empty nested item steps one level out.
+  await page.locator('.item-text').nth(2).click(); // focus it explicitly: no hidden focus race
+  await page.keyboard.press('Enter');
+  await expect.poll(() => indentOf(2)).toBe('0px');
+});
+
+test('indents the pending item with tab in the add field', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await page.keyboard.press(`${MOD}+Shift+E`);
+
+  const add = page.getByLabel('new item');
+  await add.fill('parent');
+  await add.press('Enter');
+
+  await add.fill('child');
+  await page.keyboard.press('Shift+Tab'); // out of the field is not possible: tab indents instead
+  await page.keyboard.press('Tab');
+  await expect(page.locator('.item-add')).toHaveCSS('padding-left', '22.4px');
+  await add.press('Enter');
+
+  await expect(page.locator('.items li')).toHaveCount(2);
+  await expect(page.locator('.items li').nth(1)).toHaveCSS('padding-left', '22.4px');
+
+  // The level is remembered while the list is open.
+  await expect(page.locator('.item-add')).toHaveCSS('padding-left', '22.4px');
+  await add.fill('sibling');
+  await add.press('Enter');
+  await expect(page.locator('.items li').nth(2)).toHaveCSS('padding-left', '22.4px');
+
+  // Enter on the empty placeholder steps the pending item out one level.
+  await add.press('Enter');
+  await expect(page.locator('.item-add')).toHaveCSS('padding-left', '0px');
+  await expect(page.locator('.items li')).toHaveCount(3);
+});
+
+test('refuses to check off a parent with open nested items', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await page.keyboard.press(`${MOD}+Shift+E`);
+  const add = page.getByLabel('new item');
+  for (const text of ['parent', 'child']) {
+    await add.fill(text);
+    await add.press('Enter');
+  }
+  await page.getByLabel('child', { exact: true }).click();
+  await page.keyboard.press('Tab');
+
+  await page.getByLabel('parent', { exact: true }).click({ modifiers: ['Meta'] });
+  await expect(page.locator('.item-warn')).toBeVisible(); // a tilde, briefly
+  await expect(page.getByLabel('parent', { exact: true })).toBeVisible();
 });
 
 test('ctrl+j and ctrl+k move the selection without closing the list', async ({ page }) => {
@@ -285,7 +365,9 @@ test('adds an item without the placeholder flashing back first', async ({ page }
     let frame = 0;
     const tick = () => {
       const input = document.querySelector('.add') as HTMLInputElement;
-      const present = [...document.querySelectorAll('.item-toggle')].some((el) => el.textContent === 'flicker item');
+      const present = [...document.querySelectorAll('.item-text')].some(
+        (el) => (el as HTMLInputElement).value === 'flicker item',
+      );
       if (frame > 0 && ((input.value === '' && !present) || (input.value !== '' && present))) {
         (window as unknown as { __emptyFrames: number[] }).__emptyFrames.push(frame);
       }
@@ -295,7 +377,7 @@ test('adds an item without the placeholder flashing back first', async ({ page }
   });
 
   await add.press('Enter');
-  await expect(page.getByRole('button', { name: 'flicker item', exact: true })).toBeVisible();
+  await expect(page.getByLabel('flicker item', { exact: true })).toBeVisible();
   await expect(add).toHaveValue('');
   expect(await page.evaluate(() => (window as unknown as { __emptyFrames: number[] }).__emptyFrames)).toEqual([]);
 });

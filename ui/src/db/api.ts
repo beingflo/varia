@@ -17,9 +17,10 @@ export interface Handlers {
   heads(noteId: string): Version[];
   restoreVersion(noteId: string, versionId: string): boolean;
   items(noteId: string, showDone?: boolean): Item[];
-  addItem(noteId: string, text: string, itemId?: string): string;
+  addItem(noteId: string, text: string, itemId?: string, depth?: number, ordering?: number): string;
   toggleItem(itemId: string): void;
   setItemText(itemId: string, text: string): void;
+  setItemDepth(itemId: string, depth: number): void;
   removeItem(itemId: string): void;
   itemHistory(itemId: string): { fields: string; lamport: number; device: string; created: number }[];
   tags(): string[];
