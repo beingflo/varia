@@ -65,6 +65,7 @@ export default function TodoView(props: { id: string }) {
 
   return (
     <main class="page">
+      <div class="card">
       <input
         ref={titleInput}
         class="title"
@@ -118,6 +119,7 @@ export default function TodoView(props: { id: string }) {
       <Show when={showDone()}>
         <p class="muted small">showing done</p>
       </Show>
+      </div>
     </main>
   );
 }

@@ -185,14 +185,73 @@ test('ctrl+j and ctrl+k move the selection without closing the list', async ({ p
   await expect(editor(page)).toHaveValue('beta');
 });
 
-test('uses the full width of the window', async ({ page }) => {
+test('keeps both notes when a new one is started right after saving', async ({ page }) => {
   await page.goto('/');
   await ready(page);
-  const [mainWidth, windowWidth] = await page.evaluate(() => [
-    document.querySelector('main')!.getBoundingClientRect().width,
-    window.innerWidth,
-  ]);
-  expect(mainWidth).toBeGreaterThan(windowWidth * 0.85);
+  await editor(page).fill('alpha');
+  await press(page, 's');
+  await press(page, 'e'); // immediately, without waiting for the save
+  await expect(editor(page)).toHaveValue('');
+  await editor(page).fill('beta');
+  await press(page, 's');
+
+  await openList(page);
+  await expect(page.getByText('alpha')).toBeVisible();
+  await expect(page.getByText('beta')).toBeVisible();
+});
+
+test('fits an empty note in the viewport without scrolling', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  const overflow = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
+  expect(overflow).toBeLessThanOrEqual(0);
+  await expect(page.getByLabel('tags')).toBeInViewport();
+});
+
+test('grows the editor instead of scrolling inside it', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  const long = Array.from({ length: 60 }, (_, i) => `line ${i + 1} of a note long enough to overflow`).join('\n');
+  await editor(page).fill(long);
+
+  const info = await page.evaluate(() => {
+    const el = document.querySelector('.editor') as HTMLTextAreaElement;
+    return {
+      fieldScrolls: el.scrollHeight > el.clientHeight + 2,
+      pageScrolls: document.documentElement.scrollHeight > window.innerHeight,
+    };
+  });
+  expect(info.fieldScrolls).toBe(false);
+  expect(info.pageScrolls).toBe(true);
+});
+
+test('shrinks the editor back down when a new note starts', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  const long = Array.from({ length: 60 }, (_, i) => `line ${i + 1} of a note long enough to overflow`).join('\n');
+  await editor(page).fill(long);
+  await press(page, 's');
+
+  const grown = await page.evaluate(() => Math.round(document.querySelector('.editor')!.getBoundingClientRect().height));
+  expect(grown).toBeGreaterThan(800);
+
+  await press(page, 'e');
+  await expect(editor(page)).toHaveValue('');
+  await expect
+    .poll(() => page.evaluate(() => Math.round(document.querySelector('.editor')!.getBoundingClientRect().height)))
+    .toBeLessThan(800);
+});
+
+test('centres the writing column on wide windows', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto('/');
+  await ready(page);
+
+  const { columnCentre, windowCentre } = await page.evaluate(() => {
+    const box = document.querySelector('.editor')!.getBoundingClientRect();
+    return { columnCentre: box.x + box.width / 2, windowCentre: window.innerWidth / 2 };
+  });
+  expect(Math.abs(columnCentre - windowCentre)).toBeLessThan(2);
 });
 
 test('a second tab sees writes without a reload', async ({ page, context }) => {

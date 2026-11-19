@@ -75,6 +75,32 @@ describe('Note list overlay', () => {
     await waitFor(() => expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: listed[1].id })));
   });
 
+  it('does not move the cursor when the mouse passes over a note', async () => {
+    const { repo } = await seed();
+    const onOpen = vi.fn();
+    renderWithRepo(() => <NoteList onOpen={onOpen} onClose={() => {}} />, repo);
+
+    await screen.findByText('work');
+    const listed = await repo.listNotes();
+    const rows = document.querySelectorAll('.notes li');
+    fireEvent.mouseOver(rows[1]);
+    fireEvent.mouseEnter(rows[1]);
+    fireEvent.keyDown(window, { key: 'Enter' });
+
+    await waitFor(() => expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: listed[0].id })));
+  });
+
+  it('marks the note that is currently open', async () => {
+    const { repo, list } = await seed();
+    renderWithRepo(() => <NoteList onOpen={() => {}} onClose={() => {}} currentId={list} />, repo);
+
+    await screen.findByText('work');
+    const current = document.querySelector('.notes a[aria-current="true"]');
+    expect(current?.textContent).toContain('work');
+    expect(current?.querySelector('.dot')?.textContent).toBe('•');
+    expect(document.querySelectorAll('.notes a[aria-current="true"]')).toHaveLength(1);
+  });
+
   it('closes on escape', async () => {
     const { repo } = await seed();
     const onClose = vi.fn();

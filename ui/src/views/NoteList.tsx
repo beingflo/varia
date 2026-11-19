@@ -4,7 +4,12 @@ import type { NoteSummary } from '../db/api';
 import { ago } from '../lib/time';
 
 /** Fullscreen, opaque, keyboard driven: ⌘K opens it, Esc closes it, arrows and Enter pick. */
-export default function NoteList(props: { onOpen: (note: NoteSummary) => void; onClose: () => void }) {
+export default function NoteList(props: {
+  onOpen: (note: NoteSummary) => void;
+  onClose: () => void;
+  /** The note that is open behind the list, marked so you can see where you are. */
+  currentId?: string;
+}) {
   const repo = useRepo();
   const [q, setQ] = createSignal('');
   const [cursor, setCursor] = createSignal(0);
@@ -74,15 +79,19 @@ export default function NoteList(props: { onOpen: (note: NoteSummary) => void; o
       <ul class="notes">
         <For each={notes() ?? []} fallback={<li class="muted">nothing yet</li>}>
           {(note, index) => (
-            <li class={index() === cursor() ? 'on' : ''} onMouseEnter={() => setCursor(index())}>
+            <li class={index() === cursor() ? 'on' : ''}>
               <a
                 href="/"
+                aria-current={note.id === props.currentId ? 'true' : undefined}
                 onClick={(e) => {
                   e.preventDefault();
                   props.onOpen(note);
                 }}
               >
-                <span class={note.title ? '' : 'muted'}>{note.title || '(untitled)'}</span>
+                <span class="dot" aria-hidden="true">
+                  {note.id === props.currentId ? '•' : ''}
+                </span>
+                <span class={note.title ? 'title-text' : 'title-text muted'}>{note.title || '(untitled)'}</span>
                 <span class="muted small">{note.kind === 'todo' ? `${note.open_items} open` : ago(note.updated)}</span>
               </a>
             </li>

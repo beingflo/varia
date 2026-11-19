@@ -29,6 +29,14 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
   // read would return, so the follow-up load must not touch it.
   let ownNote: string | undefined;
 
+  // The editor grows with its content; the page scrolls, never the field.
+  const autosize = () => {
+    const el = editor;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
+
   const load = async (id: string | undefined) => {
     const mine = ++generation;
     const mark = edits;
@@ -44,6 +52,7 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
       setTags('');
       setSavedTags('');
       setUpdated(0);
+      requestAnimationFrame(autosize); // a fresh draft starts at its initial height again
       return;
     }
     const note = await repo.getNote(id);
@@ -54,50 +63,55 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
     setTags(noteTags.join(', '));
     setSavedTags(noteTags.join(', '));
     setUpdated(note?.updated ?? 0);
+    requestAnimationFrame(autosize);
   };
 
   createEffect(() => void load(props.id));
 
-  // One flush at a time: two overlapping flushes of a draft would both see "no note yet"
-  // and create two notes.
-  let inFlight: Promise<void> | null = null;
+  // Saves are serialised and their state is captured synchronously, so a flush can be started
+  // right before the editor is reset without picking up the new, empty editor.
+  let queue: Promise<void> = Promise.resolve();
+  // The note a queued flush of this draft created, so a second queued flush saves into it
+  // instead of creating another note. Scoped by load generation: a fresh draft never reuses it.
+  let draftNote: { id: string; gen: number } | undefined;
 
-  const flush = async (): Promise<void> => {
-    while (inFlight) await inFlight;
-    inFlight = doFlush().finally(() => {
-      inFlight = null;
-    });
-    return inFlight;
+  const flush = (): Promise<void> => {
+    const snapshot = {
+      text: body(),
+      startId: noteId(),
+      tags: tags()
+        .split(',')
+        .map((t) => t.trim().toLowerCase())
+        .filter(Boolean),
+      gen: generation,
+    };
+    queue = queue.then(() => save(snapshot)).catch((err) => console.error('save failed', err));
+    return queue;
   };
 
-  const doFlush = async () => {
-    const text = body();
-    const tagList = tags()
-      .split(',')
-      .map((t) => t.trim().toLowerCase())
-      .filter(Boolean);
-
-    let id = noteId();
+  const save = async (snapshot: { text: string; startId: string | undefined; tags: string[]; gen: number }) => {
+    const { text, startId, tags: tagList, gen } = snapshot;
     // A draft is only materialised once it has content.
-    if (!id && !text.trim() && tagList.length === 0) return;
-    let created = false;
-    if (!id) {
-      id = await repo.createNote('note');
-      setNoteId(id);
-      created = true;
-    }
+    if (!startId && !text.trim() && tagList.length === 0) return;
+    const mine = () => generation === gen; // false once the editor moved on
+    const reused = !startId && draftNote?.gen === gen ? draftNote.id : undefined;
+    const created = !startId && !reused;
+    const id = startId ?? reused ?? (await repo.createNote('note'));
+    if (created) draftNote = { id, gen };
+
     if (text !== saved()) {
       await repo.saveBody(id, text);
-      setSaved(text);
-      setUpdated(Date.now());
+      if (mine()) {
+        setSaved(text);
+        setUpdated(Date.now());
+      }
     }
     if (tagList.join(',') !== savedTags().split(',').filter(Boolean).join(',')) {
       await repo.setNoteMeta(id, { tags: tagList });
-      setSavedTags(tagList.join(', '));
+      if (mine()) setSavedTags(tagList.join(', '));
     }
-    // Only now can the parent switch to this note: it must not load a note whose body
-    // has not been written yet, or the load would clear the editor.
-    if (created) {
+    if (created && mine()) {
+      setNoteId(id);
       ownNote = id;
       editor?.focus();
       props.onCreated?.(id);
@@ -106,6 +120,8 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
 
   onMount(() => {
     editor?.focus();
+    autosize();
+    window.addEventListener('resize', autosize);
     const off = [
       registerFlush(flush),
       onEditorFocus(() => editor?.focus()),
@@ -115,7 +131,10 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
         setHistoryOpen(!historyOpen());
       }),
     ];
-    onCleanup(() => off.forEach((unregister) => unregister()));
+    onCleanup(() => {
+      off.forEach((unregister) => unregister());
+      window.removeEventListener('resize', autosize);
+    });
   });
 
   return (
@@ -124,11 +143,12 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
         ref={editor}
         class="editor"
         aria-label="note body"
-        placeholder=""
+        placeholder="Write something nice"
         value={body()}
         onInput={(e) => {
           edits += 1;
           setBody(e.currentTarget.value);
+          autosize();
         }}
         onBlur={() => void flush()}
       />
@@ -141,10 +161,11 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
           onInput={(e) => setTags(e.currentTarget.value)}
           onBlur={() => void flush()}
         />
-        <Show when={updated()}>
-          <span class="muted small">{ago(updated())}</span>
-        </Show>
       </div>
+
+      <Show when={updated()}>
+        <span class="stamp muted small">{ago(updated())}</span>
+      </Show>
       <Show when={historyOpen() && noteId()}>
         <History noteId={noteId()!} onClose={() => setHistoryOpen(false)} onRestore={() => void load(noteId())} />
       </Show>

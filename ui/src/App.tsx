@@ -27,9 +27,13 @@ export default function App() {
         setListOpen(true);
       }),
       onCommand('new-note', async () => {
-        await flushAll();
+        // Reset immediately, save the previous note in the background: the flush took its
+        // snapshot synchronously, so typing into the new draft cannot be swallowed.
+        const pending = flushAll();
         setListOpen(false);
         setOpen({ kind: 'note' });
+        await pending;
+        focusEditor();
       }),
       onCommand('new-list', async () => {
         await flushAll();
@@ -56,6 +60,7 @@ export default function App() {
       </Show>
       <Show when={listOpen()}>
         <NoteList
+          currentId={open().id}
           onClose={() => {
             setListOpen(false);
             focusEditor();

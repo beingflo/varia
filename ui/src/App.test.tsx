@@ -64,6 +64,23 @@ describe('App', () => {
     expect(screen.getByLabelText('note body')).toHaveProperty('value', 'keep me');
   });
 
+  it('saves the previous draft when a new note is requested right away', async () => {
+    const repo = testRepo();
+    renderWithRepo(() => <App />, repo);
+
+    fireEvent.input(await screen.findByLabelText('note body'), { target: { value: 'alpha' } });
+    mod('save');
+    mod('new-note'); // no waiting between the two
+
+    await waitFor(() => expect(screen.getByLabelText('note body')).toHaveProperty('value', ''));
+    fireEvent.input(screen.getByLabelText('note body'), { target: { value: 'beta' } });
+    mod('save');
+
+    await waitFor(async () => expect(await repo.listNotes()).toHaveLength(2));
+    const titles = (await repo.listNotes()).map((n) => n.title).sort();
+    expect(titles).toEqual(['alpha', 'beta']);
+  });
+
   it('returns to a fresh draft with the new-note command', async () => {
     const repo = testRepo();
     renderWithRepo(() => <App />, repo);
