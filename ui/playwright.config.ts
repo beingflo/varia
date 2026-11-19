@@ -13,10 +13,11 @@ export default defineConfig({
     if (!device) throw new Error(`unknown browser ${name}`);
     return { name: name.trim(), use: { ...device } };
   }),
+  // The built app, not the dev server: no HMR reloads can land in the middle of a test.
   webServer: {
-    command: 'npx vite --port 4174 --strictPort',
+    command: 'npm run build && npx vite preview --port 4174 --strictPort',
     url: 'http://localhost:4174',
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
+    reuseExistingServer: false,
+    timeout: 120_000,
   },
 });

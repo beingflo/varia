@@ -21,7 +21,9 @@ export default defineConfig({
   plugins: [
     solid(),
     VitePWA({
+      // Stale precached bundles are the one way an old client keeps running an old bug.
       registerType: 'autoUpdate',
+      workbox: { cleanupOutdatedCaches: true },
       manifest: { name: 'varia', start_url: '/', display: 'standalone', background_color: '#111', theme_color: '#111' },
     }),
   ],

@@ -1,36 +1,69 @@
 import { fireEvent, screen, waitFor } from '@solidjs/testing-library';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { testRepo } from '../db/inProcess';
+import { runCommand } from '../lib/commands';
 import { renderWithRepo } from '../test-utils';
 import NoteView from './NoteView';
 
 describe('Note view', () => {
-  it('saves the body on blur and keeps it visible', async () => {
+  it('does not create a note for an empty draft', async () => {
     const repo = testRepo();
-    const id = await repo.createNote('note');
-    renderWithRepo(() => <NoteView id={id} />, repo);
+    renderWithRepo(() => <NoteView />, repo);
 
     const editor = await screen.findByLabelText('note body');
-    fireEvent.input(editor, { target: { value: '# Lab notes\nfirst try' } });
     fireEvent.blur(editor);
+    runCommand('save');
 
-    const versions = await repo.versions(id);
-    expect(versions).toHaveLength(1);
-    expect(versions[0].body).toContain('first try');
-    expect(await repo.getNote(id)).toMatchObject({ title: 'Lab notes' });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(await repo.listNotes()).toHaveLength(0);
   });
 
-  it('writes no extra version when the body did not change', async () => {
+  it('creates the draft on save, only once', async () => {
+    const repo = testRepo();
+    const created = vi.fn();
+    renderWithRepo(() => <NoteView onCreated={created} />, repo);
+
+    fireEvent.input(screen.getByLabelText('note body'), { target: { value: '# Lab notes\nfirst try' } });
+    runCommand('save');
+
+    await waitFor(async () => expect(await repo.listNotes()).toHaveLength(1));
+    const [note] = await repo.listNotes();
+    expect(note.title).toBe('Lab notes');
+    expect(created).toHaveBeenCalledWith(note.id);
+
+    runCommand('save');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(await repo.listNotes()).toHaveLength(1);
+  });
+
+  it('saves on blur, not while typing', async () => {
     const repo = testRepo();
     const id = await repo.createNote('note');
     renderWithRepo(() => <NoteView id={id} />, repo);
 
     const editor = await screen.findByLabelText('note body');
-    fireEvent.input(editor, { target: { value: 'same' } });
-    fireEvent.blur(editor);
-    fireEvent.blur(editor);
+    fireEvent.input(editor, { target: { value: 'typed but not blurred' } });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await repo.versions(id)).toHaveLength(0);
 
+    fireEvent.blur(editor);
     await waitFor(async () => expect(await repo.versions(id)).toHaveLength(1));
+  });
+
+  it('writes no new version when nothing changed', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('note');
+    const created = await repo.saveBody(id, 'same');
+    renderWithRepo(() => <NoteView id={id} />, repo);
+
+    const editor = await screen.findByLabelText('note body');
+    await waitFor(() => expect(editor).toHaveProperty('value', 'same'));
+    fireEvent.blur(editor);
+    runCommand('save');
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(created).toBe(true);
+    expect(await repo.versions(id)).toHaveLength(1);
   });
 
   it('stores tags from the comma separated field', async () => {
@@ -42,20 +75,24 @@ describe('Note view', () => {
     fireEvent.input(tags, { target: { value: ' Work, lab ,,' } });
     fireEvent.blur(tags);
 
-    expect(await repo.tagsOf(id)).toEqual(['lab', 'work']);
+    await waitFor(async () => expect(await repo.tagsOf(id)).toEqual(['lab', 'work']));
   });
 
-  it('shows versions and restores one', async () => {
+  it('opens history with a command and restores by clicking a version', async () => {
     const repo = testRepo();
     const id = await repo.createNote('note');
     await repo.saveBody(id, 'first');
     await repo.saveBody(id, 'second');
     renderWithRepo(() => <NoteView id={id} />, repo);
 
-    fireEvent.click(await screen.findByText('history'));
-    const restores = await screen.findAllByText('restore');
-    fireEvent.click(restores[restores.length - 1]);
+    runCommand('history');
+    const rows = await waitFor(() => {
+      const found = document.querySelectorAll('.version');
+      expect(found.length).toBe(2);
+      return found;
+    });
+    fireEvent.click(rows[1]); // the older one
 
-    expect(await repo.getNote(id)).toMatchObject({ body: 'first' });
+    await waitFor(async () => expect(await repo.getNote(id)).toMatchObject({ body: 'first' }));
   });
 });

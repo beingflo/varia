@@ -1,101 +1,152 @@
-import { createEffect, createResource, createSignal, onMount, Show } from 'solid-js';
+import { createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js';
 import History from '../components/History';
 import { useRepo } from '../db/context';
-import { navigate } from '../lib/route';
+import { onCommand, onEditorFocus } from '../lib/commands';
+import { registerFlush } from '../lib/flush';
 import { ago } from '../lib/time';
 
-const DEBOUNCE_MS = 1000;
-
-export default function NoteView(props: { id: string }) {
+/**
+ * The editor. With no `id` this is the landing draft: nothing exists in the database until
+ * something has been written and saved.
+ */
+export default function NoteView(props: { id?: string; onCreated?: (id: string) => void }) {
   const repo = useRepo();
-  const [note, { refetch }] = createResource(() => props.id, (id) => repo.getNote(id));
+  const [noteId, setNoteId] = createSignal(props.id);
+  const [body, setBody] = createSignal('');
+  const [saved, setSaved] = createSignal('');
+  const [tags, setTags] = createSignal('');
+  const [savedTags, setSavedTags] = createSignal('');
+  const [updated, setUpdated] = createSignal(0);
   const [historyOpen, setHistoryOpen] = createSignal(false);
-  const [tagText, setTagText] = createSignal<string | null>(null);
-  let timer: ReturnType<typeof setTimeout> | undefined;
   let editor: HTMLTextAreaElement | undefined;
 
-  onMount(() =>
-    repo.onChange?.(() => {
-      // Another tab changed something; only re-read when this note is not being edited.
-      if (!editor?.matches(':focus')) void refetch();
-    }),
-  );
+  // Bumped on every keystroke: a load that resolves after the user started typing must not
+  // overwrite what they wrote (the body it read is the older baseline, kept as `saved`).
+  let edits = 0;
+  // Bumped on every load: a slow load of a previous note must never apply its rows last.
+  let generation = 0;
+  // The note this editor created itself: its body is already on screen and newer than what a
+  // read would return, so the follow-up load must not touch it.
+  let ownNote: string | undefined;
 
-  createEffect(async () => {
-    const current = note();
-    if (current && tagText() === null) setTagText((await repo.tagsOf(current.id)).join(', '));
-  });
-
-  // No refetch after a save: a stale read landing mid-typing would rewrite the textarea
-  // with the previous body, and the next blur would save that older text back.
-  const save = async (body: string) => {
-    clearTimeout(timer);
-    await repo.saveBody(props.id, body);
+  const load = async (id: string | undefined) => {
+    const mine = ++generation;
+    const mark = edits;
+    setNoteId(id);
+    setHistoryOpen(false);
+    if (id && id === ownNote) {
+      ownNote = undefined;
+      return;
+    }
+    if (!id) {
+      setBody('');
+      setSaved('');
+      setTags('');
+      setSavedTags('');
+      setUpdated(0);
+      return;
+    }
+    const note = await repo.getNote(id);
+    const noteTags = await repo.tagsOf(id);
+    if (mine !== generation) return;
+    setSaved(note?.body ?? '');
+    if (edits === mark) setBody(note?.body ?? '');
+    setTags(noteTags.join(', '));
+    setSavedTags(noteTags.join(', '));
+    setUpdated(note?.updated ?? 0);
   };
 
-  const onInput = (body: string) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => void save(body), DEBOUNCE_MS);
+  createEffect(() => void load(props.id));
+
+  // One flush at a time: two overlapping flushes of a draft would both see "no note yet"
+  // and create two notes.
+  let inFlight: Promise<void> | null = null;
+
+  const flush = async (): Promise<void> => {
+    while (inFlight) await inFlight;
+    inFlight = doFlush().finally(() => {
+      inFlight = null;
+    });
+    return inFlight;
   };
 
-  const saveTags = async () => {
-    const tags = (tagText() ?? '')
+  const doFlush = async () => {
+    const text = body();
+    const tagList = tags()
       .split(',')
       .map((t) => t.trim().toLowerCase())
       .filter(Boolean);
-    await repo.setNoteMeta(props.id, { tags });
-    void refetch();
+
+    let id = noteId();
+    // A draft is only materialised once it has content.
+    if (!id && !text.trim() && tagList.length === 0) return;
+    let created = false;
+    if (!id) {
+      id = await repo.createNote('note');
+      setNoteId(id);
+      created = true;
+    }
+    if (text !== saved()) {
+      await repo.saveBody(id, text);
+      setSaved(text);
+      setUpdated(Date.now());
+    }
+    if (tagList.join(',') !== savedTags().split(',').filter(Boolean).join(',')) {
+      await repo.setNoteMeta(id, { tags: tagList });
+      setSavedTags(tagList.join(', '));
+    }
+    // Only now can the parent switch to this note: it must not load a note whose body
+    // has not been written yet, or the load would clear the editor.
+    if (created) {
+      ownNote = id;
+      editor?.focus();
+      props.onCreated?.(id);
+    }
   };
 
-  return (
-    <main>
-      <header>
-        <a href="/" onClick={(e) => (e.preventDefault(), navigate('/'))}>
-          ← back
-        </a>
-        <nav>
-          <button type="button" onClick={() => setHistoryOpen(!historyOpen())}>
-            history
-          </button>
-          <button
-            type="button"
-            onClick={async () => {
-              await repo.setNoteMeta(props.id, { deleted: true });
-              navigate('/');
-            }}
-          >
-            delete
-          </button>
-        </nav>
-      </header>
+  onMount(() => {
+    editor?.focus();
+    const off = [
+      registerFlush(flush),
+      onEditorFocus(() => editor?.focus()),
+      onCommand('save', () => void flush()),
+      onCommand('history', async () => {
+        await flush(); // a draft gets its id here
+        setHistoryOpen(!historyOpen());
+      }),
+    ];
+    onCleanup(() => off.forEach((unregister) => unregister()));
+  });
 
-      <Show when={note()} fallback={<p class="muted">missing note</p>}>
-        {(current) => (
-          <>
-            <textarea
-              ref={editor}
-              class="editor"
-              aria-label="note body"
-              value={current().body}
-              onInput={(e) => onInput(e.currentTarget.value)}
-              onBlur={(e) => void save(e.currentTarget.value)}
-            />
-            <div class="meta">
-              <input
-                class="tag-input"
-                aria-label="tags"
-                placeholder="tags, comma separated"
-                value={tagText() ?? ''}
-                onInput={(e) => setTagText(e.currentTarget.value)}
-                onBlur={() => void saveTags()}
-              />
-              <span class="muted">{ago(current().updated)}</span>
-            </div>
-            <Show when={historyOpen()}>
-              <History noteId={props.id} onRestore={() => void refetch()} />
-            </Show>
-          </>
-        )}
+  return (
+    <main class="page">
+      <textarea
+        ref={editor}
+        class="editor"
+        aria-label="note body"
+        placeholder=""
+        value={body()}
+        onInput={(e) => {
+          edits += 1;
+          setBody(e.currentTarget.value);
+        }}
+        onBlur={() => void flush()}
+      />
+      <div class="meta">
+        <input
+          class="tags"
+          aria-label="tags"
+          placeholder="tags"
+          value={tags()}
+          onInput={(e) => setTags(e.currentTarget.value)}
+          onBlur={() => void flush()}
+        />
+        <Show when={updated()}>
+          <span class="muted small">{ago(updated())}</span>
+        </Show>
+      </div>
+      <Show when={historyOpen() && noteId()}>
+        <History noteId={noteId()!} onClose={() => setHistoryOpen(false)} onRestore={() => void load(noteId())} />
       </Show>
     </main>
   );

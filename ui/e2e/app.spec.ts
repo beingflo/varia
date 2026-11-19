@@ -1,17 +1,24 @@
 import { expect, test, type Page } from '@playwright/test';
 
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+const press = (page: Page, key: string) => page.keyboard.press(`${MOD}+${key}`);
+
 /** Waits until the worker has opened the database, whatever view is mounted. */
 async function ready(page: Page) {
   await page.waitForFunction(() => document.documentElement.dataset.db === 'ready', null, { timeout: 20_000 });
 }
 
-async function newNote(page: Page, body: string) {
-  await ready(page);
-  await page.getByRole('button', { name: 'note' }).click();
-  const editor = page.getByLabel('note body');
-  await editor.fill(body);
-  await editor.blur();
+async function openList(page: Page) {
+  await press(page, 'k');
+  await expect(page.getByLabel('search notes')).toBeVisible();
 }
+
+async function openDebug(page: Page) {
+  await page.keyboard.press(`${MOD}+Shift+D`);
+  await expect(page.getByText('varia · database')).toBeVisible();
+}
+
+const editor = (page: Page) => page.getByLabel('note body');
 
 test('is cross-origin isolated, as the sqlite opfs VFS requires', async ({ page }) => {
   await page.goto('/');
@@ -19,140 +26,200 @@ test('is cross-origin isolated, as the sqlite opfs VFS requires', async ({ page 
   await ready(page);
 });
 
-test('keeps a note across a reload and lists it by title', async ({ page }) => {
-  await page.goto('/');
-  await newNote(page, '# Lab notes\nthe retry loop coalesces');
-
-  // Back to the list first: the title can only come from a save that actually landed.
-  await page.getByText('← back').click();
-  await expect(page.getByText('Lab notes')).toBeVisible();
-
-  await page.reload();
-  await ready(page);
-  await expect(page.getByText('Lab notes')).toBeVisible();
-
-  await page.getByText('Lab notes').click();
-  await expect(page.getByLabel('note body')).toHaveValue('# Lab notes\nthe retry loop coalesces');
-});
-
-test('searches bodies and item texts, and filters by tag', async ({ page }) => {
-  await page.goto('/');
-  await newNote(page, 'about coalesce');
-  await page.getByLabel('tags').fill('lab, work');
-  await page.getByLabel('tags').blur();
-
-  await page.getByText('← back').click();
-  await expect(page.getByText('lab')).toBeVisible();
-
-  await page.getByPlaceholder('search').fill('coalesce');
-  await expect(page.getByText('about coalesce')).toBeVisible();
-
-  await page.getByPlaceholder('search').fill('nothing matches this');
-  await expect(page.getByText('about coalesce')).toHaveCount(0);
-
-  await page.getByPlaceholder('search').fill('');
-  await page.getByRole('button', { name: 'lab' }).click();
-  await expect(page.getByText('about coalesce')).toBeVisible();
-});
-
-test('shows version history and restores an older body', async ({ page }) => {
-  await page.goto('/');
-  await newNote(page, 'first draft');
-  const editor = page.getByLabel('note body');
-  await editor.fill('second draft');
-  await editor.blur();
-
-  await page.getByRole('button', { name: 'history' }).click();
-  const rows = page.locator('.version');
-  await expect(rows).toHaveCount(2);
-  await rows.last().getByRole('button', { name: 'restore' }).click();
-  await expect(editor).toHaveValue('first draft');
-  await expect(rows).toHaveCount(3); // restoring is an ordinary edit: it adds a version
-});
-
-test('runs a todo list: add, check, show done, edit, delete, rename', async ({ page }) => {
+test('lands on an empty note and saves it only on command', async ({ page }) => {
   await page.goto('/');
   await ready(page);
-  await page.getByRole('button', { name: 'list' }).click();
+
+  await expect(editor(page)).toHaveValue('');
+  await expect(page).toHaveTitle('varia');
+
+  await editor(page).fill('# Lab notes\nthe retry loop coalesces');
+  await press(page, 's');
+  // Saving a draft must not clear or deselect what was just written.
+  await expect(editor(page)).toHaveValue('# Lab notes\nthe retry loop coalesces');
+
+  await openList(page);
+  await expect(page.getByText('Lab notes')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(editor(page)).toHaveValue('# Lab notes\nthe retry loop coalesces');
+  await expect(editor(page)).toBeFocused();
+});
+
+test('does not save while typing', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await editor(page).fill('saved once');
+  await press(page, 's');
+
+  // Type more, wait past every debounce that used to exist, and read the row count off the
+  // overlay's own table list (clicking a table would blur the editor and legitimately save).
+  await editor(page).fill('saved once, then typed more');
+  await page.waitForTimeout(1500);
+  await openDebug(page);
+  await expect(page.locator('nav button[aria-label="table version"]')).toContainText('version1');
+  await page.keyboard.press('Escape');
+
+  // An explicit save is what writes the newer text.
+  await press(page, 's');
+  await openDebug(page);
+  await expect(page.locator('nav button[aria-label="table version"]')).toContainText('version2');
+  await page.keyboard.press('Escape');
+  await expect(editor(page)).toHaveValue('saved once, then typed more');
+});
+
+test('saves on blur', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await editor(page).fill('saved by blur');
+  await page.getByLabel('tags').click(); // moves focus away from the editor
+  await openList(page);
+  await expect(page.getByText('saved by blur')).toBeVisible();
+});
+
+test('starts a new note from anywhere and searches the list', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await editor(page).fill('first note');
+  await press(page, 's');
+
+  await press(page, 'e');
+  await expect(editor(page)).toHaveValue('');
+
+  await editor(page).fill('second note');
+  await press(page, 's');
+
+  await openList(page);
+  await page.getByLabel('search notes').fill('second');
+  await expect(page.getByText('first note')).toBeHidden();
+  await page.keyboard.press('Enter');
+  await expect(page.getByLabel('search notes')).toHaveCount(0);
+  await expect(editor(page)).toHaveValue('second note');
+});
+
+test('deletes the open note', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await editor(page).fill('doomed');
+  await press(page, 's');
+  await press(page, 'd');
+
+  await expect(editor(page)).toHaveValue('');
+  await openList(page);
+  await expect(page.getByText('nothing yet')).toBeVisible();
+});
+
+test('restores an old version from history', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await editor(page).fill('first draft');
+  await press(page, 's');
+  await editor(page).fill('second draft');
+  await press(page, 's');
+
+  await page.keyboard.press(`${MOD}+Shift+H`);
+  const versions = page.locator('.version');
+  await expect(versions).toHaveCount(2);
+  await versions.last().click();
+
+  await expect(editor(page)).toHaveValue('first draft');
+});
+
+test('runs a todo list without a single button', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await page.keyboard.press(`${MOD}+Shift+E`);
 
   const title = page.getByLabel('list title');
+  await expect(title).toHaveValue('list');
   await title.fill('work');
-  await title.blur();
+  await press(page, 's');
 
   const add = page.getByLabel('new item');
-  for (const text of ['buy milk', 'book dentist']) {
-    await add.fill(text);
-    await add.press('Enter');
-    await expect(page.getByRole('textbox', { name: text })).toBeVisible();
-  }
+  await add.fill('buy milk');
+  await add.press('Enter');
+  await add.fill('book dentist');
+  await add.press('Enter');
+  await expect(page.getByRole('textbox', { name: 'buy milk' })).toBeVisible();
 
   await page.getByRole('checkbox', { name: 'buy milk' }).click();
   await expect(page.getByRole('textbox', { name: 'buy milk' })).toHaveCount(0);
 
-  await page.getByRole('checkbox', { name: /show done/i }).click();
+  await page.keyboard.press(`${MOD}+Shift+A`);
   await expect(page.getByRole('textbox', { name: 'buy milk' })).toBeVisible();
 
   const item = page.getByRole('textbox', { name: 'book dentist' });
   await item.fill('book dentist urgently');
-  await item.blur();
-  // The view re-reads after the write, so the new label only appears once it is in the database.
-  await expect(page.getByRole('textbox', { name: 'book dentist urgently' })).toBeVisible();
-  await page.reload();
-  await ready(page);
+  await item.press('Tab');
   await expect(page.getByRole('textbox', { name: 'book dentist urgently' })).toBeVisible();
 
-  await page.getByLabel('delete book dentist urgently').click();
+  await page.getByRole('textbox', { name: 'book dentist urgently' }).fill('');
+  await page.getByRole('textbox', { name: 'book dentist urgently' }).press('Tab');
   await expect(page.getByRole('textbox', { name: 'book dentist urgently' })).toHaveCount(0);
 
-  await page.getByText('← back').click();
-  await expect(page.getByText('work')).toBeVisible();
+  await expect(page.locator('main button')).toHaveCount(0);
+});
+
+test('ctrl+j and ctrl+k move the selection without closing the list', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+
+  await editor(page).fill('alpha');
+  await press(page, 's');
+  await press(page, 'e');
+  await expect(editor(page)).toHaveValue(''); // the fresh draft is ready before typing
+  await editor(page).fill('beta');
+  await press(page, 's');
+
+  await openList(page); // newest first: beta, alpha
+  await expect(page.locator('.notes li')).toHaveCount(2);
+  await page.keyboard.press('Control+j');
+  await expect(page.getByLabel('search notes')).toBeVisible(); // the list stayed open
+  await page.keyboard.press('Enter');
+  await expect(editor(page)).toHaveValue('alpha');
+
+  await openList(page);
+  await expect(page.locator('.notes li')).toHaveCount(2);
+  await page.keyboard.press('Control+k');
+  await expect(page.getByLabel('search notes')).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(editor(page)).toHaveValue('beta');
+});
+
+test('uses the full width of the window', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  const [mainWidth, windowWidth] = await page.evaluate(() => [
+    document.querySelector('main')!.getBoundingClientRect().width,
+    window.innerWidth,
+  ]);
+  expect(mainWidth).toBeGreaterThan(windowWidth * 0.85);
 });
 
 test('a second tab sees writes without a reload', async ({ page, context }) => {
   await page.goto('/');
   await ready(page);
-  await page.getByRole('button', { name: 'list' }).click();
-  await page.getByLabel('new item').fill('from tab one');
-  await page.getByLabel('new item').press('Enter');
-  await expect(page.getByRole('textbox', { name: 'from tab one' })).toBeVisible();
-
-  const second = await context.newPage();
-  await second.goto(page.url());
-  await ready(second);
-  await second.getByLabel('new item').fill('from tab two');
-  await second.getByLabel('new item').press('Enter');
-
-  // No reload: the first tab is told over BroadcastChannel and re-reads.
-  await expect(page.getByRole('textbox', { name: 'from tab two' })).toBeVisible({ timeout: 10_000 });
-});
-
-test('two tabs can write the same database', async ({ page, context }) => {
-  await page.goto('/');
-  await ready(page);
+  await editor(page).fill('from tab one');
+  await press(page, 's');
 
   const second = await context.newPage();
   await second.goto('/');
   await ready(second);
+  await openList(second);
+  await expect(second.getByText('from tab one')).toBeVisible();
 
-  await second.getByRole('button', { name: 'note' }).click();
-  await second.getByLabel('note body').fill('written by tab two');
-  await second.getByLabel('note body').blur();
-  await second.getByText('← back').click();
+  await editor(page).fill('from tab one, edited');
+  await press(page, 's');
 
-  await expect(page.getByText('written by tab two')).toBeVisible({ timeout: 10_000 });
+  await expect(second.getByText('from tab one, edited')).toBeVisible({ timeout: 10_000 });
 });
 
 test('debug overlay reads the database and leaves the app untouched', async ({ page }) => {
   await page.goto('/');
   await ready(page);
-  await page.getByRole('button', { name: 'note' }).click();
-  const editor = page.getByLabel('note body');
-  await editor.fill('a note for the overlay');
-  await editor.blur();
+  await editor(page).fill('a note for the overlay');
+  await press(page, 's');
 
-  await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+Shift+D`);
-  await expect(page.getByText('varia · database')).toBeVisible();
-
+  await openDebug(page);
   await page.getByLabel('table op', { exact: true }).click();
   await expect(page.getByText('note_snapshot').first()).toBeVisible();
   await page.getByLabel('table version').click();
@@ -160,5 +227,5 @@ test('debug overlay reads the database and leaves the app untouched', async ({ p
 
   await page.keyboard.press('Escape');
   await expect(page.getByText('varia · database')).toHaveCount(0);
-  await expect(editor).toHaveValue('a note for the overlay');
+  await expect(editor(page)).toHaveValue('a note for the overlay');
 });

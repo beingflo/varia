@@ -1,22 +1,73 @@
-import { Show } from 'solid-js';
-import { parsePath, usePath } from './lib/route';
-import Notes from './views/Notes';
+import { createSignal, onCleanup, onMount, Show } from 'solid-js';
+import HistoryHost from './components/History';
+import { useRepo } from './db/context';
+import { focusEditor, onCommand } from './lib/commands';
+import { flushAll } from './lib/flush';
+import NoteList from './views/NoteList';
 import NoteView from './views/NoteView';
 import TodoView from './views/TodoView';
 
+type Open = { kind: 'note'; id?: string } | { kind: 'todo'; id: string };
+
+/** One page, no routes: the landing state is an empty note that is only saved once written. */
 export default function App() {
-  const path = usePath();
+  const repo = useRepo();
+  const [open, setOpen] = createSignal<Open>({ kind: 'note' });
+  const [listOpen, setListOpen] = createSignal(false);
+
+  onMount(() => {
+    const off = [
+      onCommand('list', async () => {
+        if (listOpen()) {
+          setListOpen(false);
+          focusEditor();
+          return;
+        }
+        await flushAll();
+        setListOpen(true);
+      }),
+      onCommand('new-note', async () => {
+        await flushAll();
+        setListOpen(false);
+        setOpen({ kind: 'note' });
+      }),
+      onCommand('new-list', async () => {
+        await flushAll();
+        setListOpen(false);
+        setOpen({ kind: 'todo', id: await repo.createNote('todo', 'list') });
+      }),
+      onCommand('delete', async () => {
+        // Flush first: a draft just saved by ⌘S only has an id once its flush finished.
+        await flushAll();
+        const current = open();
+        if (!current.id) return;
+        await repo.setNoteMeta(current.id, { deleted: true });
+        setListOpen(false);
+        setOpen({ kind: 'note' });
+      }),
+    ];
+    onCleanup(() => off.forEach((unregister) => unregister()));
+  });
+
   return (
-    <Show when={parsePath(path())} keyed>
-      {(route) =>
-        route.view === 'list' ? (
-          <Notes />
-        ) : route.view === 'note' ? (
-          <NoteView id={route.id} />
-        ) : (
-          <TodoView id={route.id} />
-        )
-      }
-    </Show>
+    <>
+      <Show when={open().kind === 'note'} fallback={<TodoView id={(open() as { id: string }).id} />}>
+        <NoteView id={open().id} onCreated={(id) => setOpen({ kind: 'note', id })} />
+      </Show>
+      <Show when={listOpen()}>
+        <NoteList
+          onClose={() => {
+            setListOpen(false);
+            focusEditor();
+          }}
+          onOpen={async (note) => {
+            await flushAll();
+            setListOpen(false);
+            setOpen({ kind: note.kind, id: note.id });
+            focusEditor();
+          }}
+        />
+      </Show>
+    </>
   );
 }
