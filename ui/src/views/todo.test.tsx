@@ -41,9 +41,28 @@ describe('Todo view', () => {
     fireEvent.keyDown(add, { key: 'Enter' });
 
     await new Promise((r) => setTimeout(r, 15));
-    const rowPresent = screen.queryByRole('button', { name: 'fresh', exact: true }) !== null;
+    const rowPresent = screen.queryByRole('button', { name: 'fresh' }) !== null;
     const fieldFilled = (screen.getByLabelText('new item') as HTMLInputElement).value !== '';
     expect(rowPresent && fieldFilled).toBe(false);
+  });
+
+  it('checks an item off on screen before the write finishes', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('todo');
+    await repo.addItem(id, 'slow toggle');
+    let release: () => void = () => {};
+    const slow = {
+      ...repo,
+      toggleItem: async (itemId: string) => {
+        await new Promise<void>((r) => (release = r));
+        return repo.toggleItem(itemId);
+      },
+    };
+    renderWithRepo(() => <TodoView id={id} />, slow);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'slow toggle' }));
+    await waitFor(() => expect(screen.queryByText('slow toggle')).toBeNull());
+    release();
   });
 
   it('hides checked items until the toggle-done command runs', async () => {

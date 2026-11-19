@@ -14,12 +14,17 @@ export default function TodoView(props: { id: string }) {
   const [saved, setSaved] = createSignal('');
   const [updated, setUpdated] = createSignal(0);
   const [editing, setEditing] = createSignal<string | null>(null);
-  const [items, setItems] = createSignal<Item[]>([]);
+  // `pending` rows are shown immediately and replaced by the materialised list after the write.
+  const [items, setItems] = createSignal<(Item & { pending?: boolean })[]>([]);
   let addInput: HTMLInputElement | undefined;
 
   const reload = async () => {
-    setItems(await repo.items(props.id, showDone()));
-    setUpdated((await repo.getNote(props.id))?.updated ?? 0);
+    const show = showDone();
+    const [list, note] = await Promise.all([repo.items(props.id, show), repo.getNote(props.id)]);
+    batch(() => {
+      setItems(list);
+      setUpdated(note?.updated ?? 0);
+    });
   };
 
   createEffect(async () => {
@@ -68,28 +73,76 @@ export default function TodoView(props: { id: string }) {
   const add = async () => {
     const text = draft().trim();
     if (!text) return;
-    await repo.addItem(props.id, text);
-    // Read both, then commit the row and the cleared field in one batch: the item appears and
-    // the field empties in the same frame, so neither state is seen without the other.
-    const [list, note] = await Promise.all([repo.items(props.id, showDone()), repo.getNote(props.id)]);
+    // One batch: the row appears and the field empties in the same frame, before the write.
     batch(() => {
-      setItems(list);
-      setUpdated(note?.updated ?? 0);
-      if (draft().trim() === text) setDraft('');
+      setItems([
+        ...items(),
+        {
+          id: `pending:${crypto.randomUUID()}`,
+          note_id: props.id,
+          text,
+          done: 0,
+          ordering: Infinity,
+          deleted: 0,
+          updated: Date.now(),
+          stamps: '{}',
+          pending: true,
+        },
+      ]);
+      setDraft('');
     });
+    try {
+      await repo.addItem(props.id, text);
+    } finally {
+      await reconcile();
+    }
   };
 
+  const reconcile = async () => {
+    try {
+      await reload();
+    } catch (err) {
+      console.error('todo list refresh failed', err);
+    }
+  };
+
+  // Every mutation paints first and writes after: the worker round trip never sits between the
+  // click and the change on screen.
   const toggle = async (item: Item) => {
-    await repo.toggleItem(item.id);
-    await reload();
+    if (item.id.startsWith('pending:')) return;
+    const done = item.done ? 0 : 1;
+    batch(() =>
+      setItems(
+        items().flatMap((row) => {
+          if (row.id !== item.id) return [row];
+          return done && !showDone() ? [] : [{ ...row, done }];
+        }),
+      ),
+    );
+    try {
+      await repo.toggleItem(item.id);
+    } finally {
+      await reconcile();
+    }
   };
 
   const saveItem = async (item: Item, text: string) => {
     setEditing(null);
+    if (item.id.startsWith('pending:')) return;
     const value = text.trim();
-    if (!value) await repo.removeItem(item.id);
-    else await repo.setItemText(item.id, value);
-    await reload();
+    batch(() =>
+      setItems(
+        value
+          ? items().map((row) => (row.id === item.id ? { ...row, text: value } : row))
+          : items().filter((row) => row.id !== item.id),
+      ),
+    );
+    try {
+      if (value) await repo.setItemText(item.id, value);
+      else await repo.removeItem(item.id);
+    } finally {
+      await reconcile();
+    }
   };
 
   return (
@@ -115,17 +168,19 @@ export default function TodoView(props: { id: string }) {
                       <button type="button" class="item-text item-toggle" aria-pressed={item.done === 1}>
                         {item.text}
                       </button>
-                      <button
-                        type="button"
-                        class="edit"
-                        aria-label={`edit ${item.text}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditing(item.id);
-                        }}
-                      >
-                        Edit
-                      </button>
+                      <Show when={!item.pending}>
+                        <button
+                          type="button"
+                          class="edit"
+                          aria-label={`edit ${item.text}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditing(item.id);
+                          }}
+                        >
+                          Edit
+                        </button>
+                      </Show>
                     </span>
                   }
                 >

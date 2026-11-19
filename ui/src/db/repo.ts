@@ -13,6 +13,11 @@ const stampOf = (op: { lamport: number; device: string }): Stamp => ({ l: op.lam
 
 export function openDb(db: Db, device?: string): string {
   migrate(db);
+  // WAL + NORMAL: the default rollback journal fsyncs twice per commit, which is what a single
+  // item write was paying for. WAL keeps SQLite's own multi-tab locking intact.
+  db.exec('PRAGMA journal_mode = WAL');
+  db.exec('PRAGMA synchronous = NORMAL');
+  db.exec('PRAGMA busy_timeout = 5000');
   const existing = meta(db, 'device');
   if (existing) return existing;
   const id = device ?? crypto.randomUUID();
