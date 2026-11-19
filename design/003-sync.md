@@ -23,8 +23,9 @@ The root key never leaves the device. `HKDF-SHA256(root, info="varia/op")` gives
 key; the same construction will produce subkeys for blob ids and anything else. Keys are imported
 non-extractable, so an XSS can read what it can read today but cannot exfiltrate the key itself.
 
-Signup is the one moment raw key bytes exist: generate extractable, export, re-import as
-non-extractable, discard. That export is the enrolment code:
+Signup is the one moment raw key bytes exist: `getRandomValues(32)` produces both the enrolment code
+and the input to a non-extractable import, so there is no importable-then-exportable key at all
+(Firefox refuses `exportKey('raw')` on HKDF keys, and now it never matters):
 
 ```
 varia1.<token>.<root key, base32>

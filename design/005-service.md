@@ -44,10 +44,11 @@ short, one writer connection, a small read pool.
 
 ## Headers
 
-The app shell must be served with `Cross-Origin-Opener-Policy: same-origin` and
-`Cross-Origin-Embedder-Policy: require-corp` for the `opfs` VFS. Set them via Caddy or `tower-http`,
-and keep the wasm/js chunks same-origin so `require-corp` stays satisfiable. `/api/*` responses need
-none of this.
+The app shell must be served with `Cross-Origin-Opener-Policy: same-origin`,
+`Cross-Origin-Embedder-Policy: require-corp` and `Cross-Origin-Resource-Policy: same-origin` for the
+`opfs` VFS. Set them via Caddy or `tower-http`, and keep the wasm/js chunks same-origin so
+`require-corp` stays satisfiable. CORP is not optional: WebKit refuses to start the worker the OPFS
+VFS spawns without it, while Chrome happens to allow it. `/api/*` responses need none of this.
 
 ## Operations
 

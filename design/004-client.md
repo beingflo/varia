@@ -58,6 +58,21 @@ runtime caching of API responses because sync is application logic, not an HTTP 
 - Sync triggers on start/foreground/hidden plus a 60 s timer while visible; anything missed is caught
   up on next open.
 
+## Tests
+
+- Data layer and components run under vitest against `node:sqlite` (same SQLite version as the wasm
+  build) through `db/inProcess.ts`, which exposes the identical handler surface the worker serves.
+- The views are tested with `@solidjs/testing-library` against that repo, not a mock, so a test that
+  clicks "restore" reads the same rows the app would.
+- Flow-level behaviour (persistence across reload, two tabs, the todo lifecycle) runs in Playwright
+  against a real server, because cross-origin isolation, OPFS and BroadcastChannel only exist there.
+  The app sets `data-db="ready"` on `<html>` once the database answered; browser tests wait on that
+  instead of on view-specific markup.
+- Engines: Chromium by default, Firefox via `VARIA_E2E_BROWSERS=firefox`, both passing. Playwright's
+  WebKit cannot run these tests — its OPFS is broken in that build — so iOS is verified on a device
+  instead. Tests assert observable database effects (a title appearing, a label changing after the
+  view re-reads) rather than sleeping, since a save is asynchronous by design.
+
 ## UI rules
 
 One column, no chrome, no dashboards. Keyboard-first: `Cmd/Ctrl-K` search, `Cmd/Ctrl-N` new note,

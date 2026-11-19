@@ -7,10 +7,18 @@ Each phase is shippable on its own. Later phases must not force a change to the 
 
 Prove or kill the client foundation before writing the app around it.
 
-- [ ] sqlite-wasm `opfs` VFS in a worker: write, reload, and a second tab reading and writing the same
+- [x] sqlite-wasm `opfs` VFS in a worker: write, reload, and a second tab reading and writing the same
       database — in an installed iOS PWA
-- [ ] a non-extractable `CryptoKey` stored in IndexedDB survives an app restart on iOS
-- [ ] app shell loads and works offline under COOP/COEP with the service worker
+- [x] desktop Firefox: `opfs` VFS works (3.54.1), the database survives a browser restart with
+      writes from two sessions visible, and a non-extractable `CryptoKey` in IndexedDB still decrypts
+      a ciphertext written before the restart
+- [x] the same two checks on an installed iOS PWA
+- [x] app shell loads and works offline under COOP/COEP with the service worker
+
+Findings: the `opfs` VFS, multi-tab writes and non-extractable key persistence all hold on iOS 17+
+(installed PWA included). A home-screen app gets separate storage from Safari, so a fresh install
+starts empty — expected, and the reason sync recovery matters. Firefox refuses `exportKey('raw')`
+on HKDF keys, which is why the root key is generated as bytes rather than as an exportable key.
 
 Exit criteria: a hardcoded note survives restarts on iOS and desktop Firefox, and two tabs both see
 each other's writes. If the `opfs` VFS fails on iOS, stop and reconsider D4 before building anything.
@@ -19,12 +27,21 @@ each other's writes. If the `opfs` VFS fails on iOS, stop and reconsider D4 befo
 
 A usable offline notebook. No server, no accounts, no encryption.
 
-- [ ] ops + materialisation, schema and migrations
-- [ ] notes: list, create, edit Markdown, delete, tag
-- [ ] todos: item list, check/uncheck, append, hide-done toggle, show-done
-- [ ] history: version list per note with restore; per-item history for todos
-- [ ] search over note bodies and todo items
-- [ ] PWA: installable, offline shell, persistence request
+- [x] ops + materialisation, schema and migrations
+- [x] notes: list, create, edit Markdown, delete, tag
+- [x] todos: item list, check/uncheck, append, hide-done toggle, show-done
+- [x] history: version list per note with restore
+- [ ] history: per-item history UI for todos (the data and API are there, the view is not)
+- [x] search over note bodies and todo items
+- [x] PWA: installable, offline shell, persistence request (best effort)
+- [x] tests: 38 vitest unit/component tests on the real schema, 7 Playwright flows covering
+      persistence across reload, search, tags, restore, the todo lifecycle and two tabs — passing on
+      Chromium and Firefox (`VARIA_E2E_BROWSERS=firefox`); Playwright's WebKit build has no working
+      OPFS, so iOS stays a manual check on device
+
+Testing is part of every phase from here on: the worker/handler split means the same code that runs
+in the browser is what the component and data tests exercise, and `data-db="ready"` on `<html>` is
+the readiness marker the browser tests wait on.
 
 ## Phase 2: Sync
 
