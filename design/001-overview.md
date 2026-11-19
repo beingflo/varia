@@ -53,7 +53,8 @@ D5 Server is axum + SQLite: an encrypted op log with auth, no note schema, no mi
 data model.
 D6 Local storage is best-effort — iOS deletes script-writable storage for unused origins after ~7
 days. The log on the server (or an export) is the real copy.
-D7 Flat notes, tags, client-side FTS5 search; no folders.
+D7 Flat notes, client-side search; no folders. Tags live in the data model (`note_tag`, tag ops) but
+have no UI yet — the likely direction is deriving them from the note body rather than editing them.
 D8 End-to-end encryption with a client-generated root key, HKDF subkeys, non-extractable at rest.
 Losing every device and the enrolment code loses the data permanently.
 D9 One op log for all note types, one push/pull cursor protocol, client-side materialisation.

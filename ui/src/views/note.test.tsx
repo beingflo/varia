@@ -39,6 +39,24 @@ describe('Note view', () => {
     expect(await repo.listNotes()).toHaveLength(1);
   });
 
+  it('does not write an empty version when saving before the note has loaded', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('note');
+    await repo.saveBody(id, 'content');
+    const slow = {
+      ...repo,
+      getNote: async (noteId: string) => {
+        await new Promise((r) => setTimeout(r, 40));
+        return repo.getNote(noteId);
+      },
+    };
+    renderWithRepo(() => <NoteView id={id} />, slow);
+
+    runCommand('save'); // the body is not on screen yet
+    await new Promise((r) => setTimeout(r, 120));
+    expect((await repo.versions(id)).map((v) => v.body)).toEqual(['content']);
+  });
+
   it('saves on blur, not while typing', async () => {
     const repo = testRepo();
     const id = await repo.createNote('note');
@@ -67,18 +85,6 @@ describe('Note view', () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(created).toBe(true);
     expect(await repo.versions(id)).toHaveLength(1);
-  });
-
-  it('stores tags from the comma separated field', async () => {
-    const repo = testRepo();
-    const id = await repo.createNote('note');
-    renderWithRepo(() => <NoteView id={id} />, repo);
-
-    const tags = await screen.findByLabelText('tags');
-    fireEvent.input(tags, { target: { value: ' Work, lab ,,' } });
-    fireEvent.blur(tags);
-
-    await waitFor(async () => expect(await repo.tagsOf(id)).toEqual(['lab', 'work']));
   });
 
   it('opens history with a command and restores by clicking a version', async () => {

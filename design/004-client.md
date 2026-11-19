@@ -8,7 +8,8 @@ SolidJS + Vite PWA, local-first: the UI is never blocked on the network and only
 ui/src/db/       sqlite-wasm worker, schema/migrations, materialiser, repo functions
 ui/src/sync/     key handling, enrolment code, push/pull loop, triggers
 ui/src/views/    Notes, Note, Todo, History, Search, Account
-ui/src/components/  editor, checklist, tag bar, sync status, version list
+ui/src/editor/    CodeMirror wrapper (see below)
+ui/src/components/  history, sync status
 ```
 
 The worker owns the only SQLite connection. Views never send SQL: they call functions in

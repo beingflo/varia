@@ -62,7 +62,7 @@ const codeBlockLines = ViewPlugin.fromClass(
 // Code is code: monospace for inline code and fenced blocks, and the fence markers recede.
 const codeStyle = HighlightStyle.define([
   { tag: tags.monospace, class: 'cm-code' },
-  { tag: tags.processingInstruction, class: 'cm-fence' },
+  { tag: tags.processingInstruction, class: 'cm-markup', color: 'var(--fg)' },
 ]);
 
 const theme = EditorView.theme({
@@ -77,31 +77,43 @@ const theme = EditorView.theme({
   '.cm-content': { padding: '0', caretColor: 'var(--fg)' },
   '.cm-line': { padding: '0' },
   '.cm-placeholder': { color: 'var(--muted)' },
-  '.cm-cursor': { borderLeftColor: 'var(--fg)' },
+  // Firefox gives an empty line's caret the whole line-box height (27px vs 20px with text), so
+  // the caret is pinned to the text size instead of letting the browser decide.
+  '.cm-cursor': { borderLeftColor: 'var(--fg)', height: '1.2em !important' },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground':
     { backgroundColor: 'color-mix(in srgb, var(--fg) 12%, transparent)' },
   '.cm-activeLine': { backgroundColor: 'transparent' },
   '&.cm-focused .cm-activeLine': { backgroundColor: 'transparent' },
   '.cm-code': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '0.95em' },
+  // Inside a code block the line already sets the size; otherwise inline-code styling shrinks
+  // fenced content twice and a block with a language looks bigger than one without.
+  '.cm-codeblock .cm-code': { fontSize: 'inherit' },
   '.cm-codeblock': {
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
     fontSize: '0.95em',
     backgroundColor: 'color-mix(in srgb, var(--fg) 4%, transparent)',
   },
-  '.cm-fence': { color: 'var(--muted)' },
+  '.cm-markup': { color: 'var(--fg)' },
 });
 
-/** Enter on a list item that has no content leaves the list instead of adding a marker. */
-const exitEmptyItem = (view: EditorView): boolean => {
+/**
+ * Enter on a list item that has no content steps one level out; at the outermost level it
+ * leaves the list. Stock CodeMirror left a stray marker behind in both cases.
+ */
+const emptyItemEnter = (view: EditorView): boolean => {
   const selection = view.state.selection.main;
   if (!selection.empty) return false;
   const line = view.state.doc.lineAt(selection.head);
-  const match = /^(\s*)([-*+]|\d+[.)])\s*$/.exec(line.text);
+  const match = /^(\s*)([-*+]|\d+[.)])(\s*)$/.exec(line.text);
   if (!match) return false;
-  const indent = match[1].length >= 2 ? match[1].slice(2) : '';
+
+  const indent = match[1];
+  const marker = match[2];
+  const nested = indent.length >= 2;
+  const insert = nested ? `${indent.slice(2)}${marker} ` : '';
   view.dispatch({
-    changes: { from: line.from, to: line.to, insert: indent },
-    selection: { anchor: line.from + indent.length },
+    changes: { from: line.from, to: line.to, insert },
+    selection: { anchor: line.from + insert.length },
     scrollIntoView: true,
     userEvent: 'delete',
   });
@@ -111,7 +123,7 @@ const exitEmptyItem = (view: EditorView): boolean => {
 function extensions(props: EditorProps): Extension[] {
   return [
     // Markdown first: Enter continues lists and quotes, Backspace undoes the marker.
-    Prec.highest(keymap.of([{ key: 'Enter', run: exitEmptyItem }, ...markdownKeymap])),
+    Prec.highest(keymap.of([{ key: 'Enter', run: emptyItemEnter }, ...markdownKeymap])),
     markdown({ codeLanguages: languages }),
     // Not `fallback`: our code style is a second highlighter, and fallback would disable this one.
     syntaxHighlighting(defaultHighlightStyle),

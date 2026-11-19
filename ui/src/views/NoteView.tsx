@@ -16,8 +16,6 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
   const [noteId, setNoteId] = createSignal(props.id);
   const [body, setBody] = createSignal('');
   const [saved, setSaved] = createSignal('');
-  const [tags, setTags] = createSignal('');
-  const [savedTags, setSavedTags] = createSignal('');
   const [updated, setUpdated] = createSignal(0);
   const [historyOpen, setHistoryOpen] = createSignal(false);
   let editor: EditorApi | undefined;
@@ -46,8 +44,6 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
     if (!id) {
       setBody('');
       setSaved('');
-      setTags('');
-      setSavedTags('');
       setUpdated(0);
       requestAnimationFrame(() => {
         focusEnd();
@@ -56,12 +52,9 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
       return;
     }
     const note = await repo.getNote(id);
-    const noteTags = await repo.tagsOf(id);
     if (mine !== generation) return;
     setSaved(note?.body ?? '');
     if (edits === mark) setBody(note?.body ?? '');
-    setTags(noteTags.join(', '));
-    setSavedTags(noteTags.join(', '));
     setUpdated(note?.updated ?? 0);
     // Focus and signal in the same frame, so a caller waiting for "ready" never sees the old state.
     requestAnimationFrame(() => {
@@ -84,36 +77,30 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
     const snapshot = {
       text: body(),
       startId: noteId(),
-      tags: tags()
-        .split(',')
-        .map((t) => t.trim().toLowerCase())
-        .filter(Boolean),
+      // What was on screen at capture time. A save requested before the note finished loading
+      // then cannot be mistaken for an edit down to an empty document.
+      baseline: saved(),
       gen: generation,
     };
     queue = queue.then(() => save(snapshot)).catch((err) => console.error('save failed', err));
     return queue;
   };
 
-  const save = async (snapshot: { text: string; startId: string | undefined; tags: string[]; gen: number }) => {
-    const { text, startId, tags: tagList, gen } = snapshot;
-    // A draft is only materialised once it has content.
-    if (!startId && !text.trim() && tagList.length === 0) return;
+  const save = async (snapshot: { text: string; startId: string | undefined; baseline: string; gen: number }) => {
+    const { text, startId, baseline, gen } = snapshot;
+    // A draft is only materialised once it has content; an unchanged body is not written again.
+    if (!startId && !text.trim()) return;
+    if (text === baseline) return;
     const mine = () => generation === gen; // false once the editor moved on
     const reused = !startId && draftNote?.gen === gen ? draftNote.id : undefined;
     const created = !startId && !reused;
     const id = startId ?? reused ?? (await repo.createNote('note'));
     if (created) draftNote = { id, gen };
 
-    if (text !== saved()) {
-      await repo.saveBody(id, text);
-      if (mine()) {
-        setSaved(text);
-        setUpdated(Date.now());
-      }
-    }
-    if (tagList.join(',') !== savedTags().split(',').filter(Boolean).join(',')) {
-      await repo.setNoteMeta(id, { tags: tagList });
-      if (mine()) setSavedTags(tagList.join(', '));
+    await repo.saveBody(id, text);
+    if (mine()) {
+      setSaved(text);
+      setUpdated(Date.now());
     }
     if (created && mine()) {
       setNoteId(id);
@@ -152,17 +139,6 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
           editor = api;
         }}
       />
-      <div class="meta">
-        <input
-          class="tags"
-          aria-label="tags"
-          placeholder="tags"
-          value={tags()}
-          onInput={(e) => setTags(e.currentTarget.value)}
-          onBlur={() => void flush()}
-        />
-      </div>
-
       <Show when={updated()}>
         <span class="stamp muted small">{ago(updated())}</span>
       </Show>

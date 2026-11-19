@@ -84,7 +84,7 @@ test('saves on blur', async ({ page }) => {
   await page.goto('/');
   await ready(page);
   await editor(page).fill('saved by blur');
-  await page.getByLabel('tags').click(); // moves focus away from the editor
+  await page.locator('.stamp, .cm-content').last().click({ position: { x: 5, y: 5 } }); // blur the editor
   await openList(page);
   await expect(page.locator('.notes li', { hasText: 'saved by blur' })).toBeVisible();
 });
@@ -228,7 +228,7 @@ test('fits an empty note in the viewport without scrolling', async ({ page }) =>
   await ready(page);
   const overflow = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
   expect(overflow).toBeLessThanOrEqual(0);
-  await expect(page.getByLabel('tags')).toBeInViewport();
+  await expect(editor(page)).toBeInViewport();
 });
 
 test('reveals the opened note already loaded, never the previous one', async ({ page }) => {
@@ -300,7 +300,7 @@ test('adds an item without the placeholder flashing back first', async ({ page }
   expect(await page.evaluate(() => (window as unknown as { __emptyFrames: number[] }).__emptyFrames)).toEqual([]);
 });
 
-test('continues markdown lists and nests them with tab', async ({ page }) => {
+test('continues markdown lists, nests with tab, and steps out one level at a time', async ({ page }) => {
   await page.goto('/');
   await ready(page);
   await editor(page).fill('- one');
@@ -308,16 +308,22 @@ test('continues markdown lists and nests them with tab', async ({ page }) => {
   await page.keyboard.type('two');
   await expectBody(page, '- one\n- two');
 
-  // Tab nests the second item.
-  await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('Tab');
   await expectBody(page, '- one\n  - two');
 
-  // Enter on an empty item leaves the list instead of adding another marker.
+  // Enter on an empty item steps one level out, keeping it an item.
+  await editor(page).press('Enter');
+  await expectBody(page, '- one\n  - two\n  - ');
+  await editor(page).press('Enter');
+  await expectBody(page, '- one\n  - two\n- ');
+  await page.keyboard.type('three');
+  await expectBody(page, '- one\n  - two\n- three');
+
+  // At the outermost level it leaves the list.
   await editor(page).press('Enter');
   await editor(page).press('Enter');
   await page.keyboard.type('plain');
-  await expectBody(page, '- one\n  - two\nplain');
+  await expectBody(page, '- one\n  - two\n- three\nplain');
 });
 
 test('continues numbered lists and counts up', async ({ page }) => {
@@ -329,10 +335,38 @@ test('continues numbered lists and counts up', async ({ page }) => {
   await expectBody(page, '1. first\n2. second');
 });
 
+test('keeps the caret the same height on empty and filled lines', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await editor(page).fill('text');
+  await page.keyboard.press('Control+End');
+  const caretHeight = () =>
+    page.evaluate(() => Math.round(document.querySelector('.cm-cursor')!.getBoundingClientRect().height));
+
+  const onText = await caretHeight();
+  await editor(page).press('Enter');
+  await page.waitForTimeout(100);
+  expect(await caretHeight()).toBe(onText);
+});
+
+test('keeps markdown markers in the text colour', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await editor(page).fill('# heading\n\n- item');
+
+  const colours = await page.evaluate(() => {
+    const spans = [...document.querySelectorAll('.cm-line span')];
+    const marker = spans.find((el) => el.textContent === '#');
+    const text = spans.find((el) => el.textContent?.includes('heading'));
+    return { marker: marker && getComputedStyle(marker).color, text: text && getComputedStyle(text).color };
+  });
+  expect(colours.marker).toBe(colours.text);
+});
+
 test('renders and highlights fenced code blocks, and marks inline code', async ({ page }) => {
   await page.goto('/');
   await ready(page);
-  await editor(page).fill('# Title\n\n```js\nconst answer = 42;\n```\n\nand `inline` here');
+  await editor(page).fill('# Title\n\n```js\nconst answer = 42;\n```\n\n```\nplain fence\n```\n\nand `inline` here');
 
   // The embedded grammar is loaded on demand, so the tokens gain colours a moment after the paste.
   await expect
@@ -356,6 +390,18 @@ test('renders and highlights fenced code blocks, and marks inline code', async (
   });
   expect(fenced.monospace).toBe(true);
   expect(fenced.tinted).toBe(true);
+
+  // A block with a language must not be a different size than one without.
+  const sizes = await page.evaluate(() => {
+    const lineWith = (text: string) =>
+      [...document.querySelectorAll('.cm-line')].find((el) => el.textContent?.includes(text));
+    const size = (text: string) => {
+      const line = lineWith(text);
+      return line ? getComputedStyle(line.querySelector('span') ?? line).fontSize : null;
+    };
+    return { withLanguage: size('const answer'), without: size('plain fence') };
+  });
+  expect(sizes.withLanguage).toBe(sizes.without);
 });
 
 test('opens a long note at the top with the caret at the end', async ({ page }) => {

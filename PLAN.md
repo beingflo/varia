@@ -63,6 +63,7 @@ the readiness marker the browser tests wait on.
 - [ ] version tree view: browse the tree, open a note at any node, edit an old version, mark resolved
 - [ ] vim mode for the note editor (pick the implementation then; the editor is behind one component)
 - [ ] quick capture: `…/?q=work buy milk` opens the `work` todo list with a new item appended
+- [ ] tags: derive them from the note body (e.g. `#tag` lines) instead of an input field
 - [ ] tag timeline: all notes under a tag as one time-ordered stream (journal-style capture)
 - [ ] export: zip of `*.md`, todo JSON and the raw op log; import that restores an account
 - [ ] warn when changes have been unsynced for days
