@@ -175,6 +175,7 @@ test('ctrl+j and ctrl+k move the selection without closing the list', async ({ p
   await page.keyboard.press('Control+j');
   await expect(page.getByLabel('search notes')).toBeVisible(); // the list stayed open
   await page.keyboard.press('Enter');
+  await expect(page.getByLabel('search notes')).toHaveCount(0); // the list closes once loaded
   await expect(editor(page)).toHaveValue('alpha');
 
   await openList(page);
@@ -182,6 +183,7 @@ test('ctrl+j and ctrl+k move the selection without closing the list', async ({ p
   await page.keyboard.press('Control+k');
   await expect(page.getByLabel('search notes')).toBeVisible();
   await page.keyboard.press('Enter');
+  await expect(page.getByLabel('search notes')).toHaveCount(0);
   await expect(editor(page)).toHaveValue('beta');
 });
 
@@ -206,6 +208,67 @@ test('fits an empty note in the viewport without scrolling', async ({ page }) =>
   const overflow = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
   expect(overflow).toBeLessThanOrEqual(0);
   await expect(page.getByLabel('tags')).toBeInViewport();
+});
+
+test('reveals the opened note already loaded, never the previous one', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await editor(page).fill('alpha body');
+  await press(page, 's');
+  await press(page, 'e');
+  await expect(editor(page)).toHaveValue('');
+  await editor(page).fill('beta body');
+  await press(page, 's');
+
+  await openList(page);
+  await expect(page.locator('.notes li')).toHaveCount(2);
+
+  // Record what is on screen at the first paint after the overlay disappears.
+  await page.evaluate(() => {
+    const seen: (string | null)[] = [];
+    (window as unknown as { __revealed: (string | null)[] }).__revealed = seen;
+    const record = () => {
+      const field = document.querySelector('.editor') as HTMLTextAreaElement | null;
+      seen.push(field?.value ?? null);
+    };
+    const tick = () => {
+      if (document.querySelector('section.overlay')) return requestAnimationFrame(tick);
+      requestAnimationFrame(record);
+    };
+    requestAnimationFrame(tick);
+  });
+
+  await page.locator('.notes li').nth(1).click(); // the older note: alpha
+  await expect(editor(page)).toHaveValue('alpha body');
+  await expect(page.locator('section.overlay')).toHaveCount(0);
+
+  // The recording happens on the first paint after the overlay is gone.
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __revealed: unknown[] }).__revealed.length))
+    .toBeGreaterThan(0);
+  const [revealed] = await page.evaluate(() => (window as unknown as { __revealed: unknown[] }).__revealed);
+  expect(revealed).toBe('alpha body');
+});
+
+test('opens a long note at the top with the caret at the end', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  const long = Array.from({ length: 80 }, (_, i) => `line ${i + 1} of a long note`).join('\n');
+  await editor(page).fill(long);
+  await press(page, 's');
+  await press(page, 'e');
+  await expect(editor(page)).toHaveValue('');
+
+  await openList(page);
+  await page.locator('.notes li').first().click();
+  await expect(page.locator('section.overlay')).toHaveCount(0);
+
+  const { scrollY, caret } = await page.evaluate(() => {
+    const field = document.querySelector('.editor') as HTMLTextAreaElement;
+    return { scrollY: window.scrollY, caret: field.selectionStart, end: field.value.length };
+  });
+  expect(scrollY).toBe(0);
+  expect(caret).toBe(long.length);
 });
 
 test('grows the editor instead of scrolling inside it', async ({ page }) => {

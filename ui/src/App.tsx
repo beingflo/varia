@@ -3,6 +3,7 @@ import HistoryHost from './components/History';
 import { useRepo } from './db/context';
 import { focusEditor, onCommand } from './lib/commands';
 import { flushAll } from './lib/flush';
+import { armViewReady } from './lib/ready';
 import NoteList from './views/NoteList';
 import NoteView from './views/NoteView';
 import TodoView from './views/TodoView';
@@ -66,9 +67,19 @@ export default function App() {
             focusEditor();
           }}
           onOpen={async (note) => {
+            const current = open();
+            if (current.id === note.id) {
+              // Already there: nothing to load, so no handshake to wait for.
+              setListOpen(false);
+              focusEditor();
+              return;
+            }
             await flushAll();
-            setListOpen(false);
+            const ready = armViewReady();
             setOpen({ kind: note.kind, id: note.id });
+            // Close the overlay on a loaded view, not on the previous note's text.
+            await Promise.race([ready, new Promise((resolve) => setTimeout(resolve, 150))]);
+            setListOpen(false);
             focusEditor();
           }}
         />

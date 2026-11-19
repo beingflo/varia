@@ -2,6 +2,7 @@ import { createEffect, createSignal, For, onCleanup, onMount, Show } from 'solid
 import { useRepo } from '../db/context';
 import { onCommand, onEditorFocus } from '../lib/commands';
 import { registerFlush } from '../lib/flush';
+import { signalViewReady } from '../lib/ready';
 
 export default function TodoView(props: { id: string }) {
   const repo = useRepo();
@@ -19,6 +20,7 @@ export default function TodoView(props: { id: string }) {
     setTitle(note?.title ?? '');
     setSaved(note?.title ?? '');
     await reload();
+    signalViewReady();
   });
 
   let inFlight: Promise<void> | null = null;

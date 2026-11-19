@@ -1,4 +1,4 @@
-import { createEffect, createResource, createSignal, For, onCleanup, onMount } from 'solid-js';
+import { createEffect, createResource, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { useRepo } from '../db/context';
 import type { NoteSummary } from '../db/api';
 import { ago } from '../lib/time';
@@ -76,8 +76,10 @@ export default function NoteList(props: {
         onInput={(e) => setQ(e.currentTarget.value)}
       />
 
+      <Show when={notes()}>
+        {(list) => (
       <ul class="notes">
-        <For each={notes() ?? []} fallback={<li class="muted">nothing yet</li>}>
+        <For each={list()} fallback={<li class="muted">nothing yet</li>}>
           {(note, index) => (
             <li class={index() === cursor() ? 'on' : ''}>
               <a
@@ -98,6 +100,8 @@ export default function NoteList(props: {
           )}
         </For>
       </ul>
+        )}
+      </Show>
     </section>
   );
 }

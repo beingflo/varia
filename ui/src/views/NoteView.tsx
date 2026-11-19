@@ -3,6 +3,7 @@ import History from '../components/History';
 import { useRepo } from '../db/context';
 import { onCommand, onEditorFocus } from '../lib/commands';
 import { registerFlush } from '../lib/flush';
+import { signalViewReady } from '../lib/ready';
 import { ago } from '../lib/time';
 
 /**
@@ -29,6 +30,14 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
   // read would return, so the follow-up load must not touch it.
   let ownNote: string | undefined;
 
+  // Caret at the end, page at the top: focusing a long note must not scroll it into view.
+  const focusEnd = () => {
+    const el = editor;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    el.setSelectionRange(el.value.length, el.value.length);
+  };
+
   // The editor grows with its content; the page scrolls, never the field.
   const autosize = () => {
     const el = editor;
@@ -52,7 +61,12 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
       setTags('');
       setSavedTags('');
       setUpdated(0);
-      requestAnimationFrame(autosize); // a fresh draft starts at its initial height again
+      requestAnimationFrame(() => {
+        autosize(); // a fresh draft starts at its initial height again
+        focusEnd();
+        window.scrollTo({ top: 0 });
+        signalViewReady();
+      });
       return;
     }
     const note = await repo.getNote(id);
@@ -63,7 +77,14 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
     setTags(noteTags.join(', '));
     setSavedTags(noteTags.join(', '));
     setUpdated(note?.updated ?? 0);
-    requestAnimationFrame(autosize);
+    // Size and signal in the same frame, so a caller waiting for "ready" never sees the old height.
+    requestAnimationFrame(() => {
+      if (mine !== generation) return;
+      autosize();
+      focusEnd();
+      window.scrollTo({ top: 0 });
+      signalViewReady();
+    });
   };
 
   createEffect(() => void load(props.id));
@@ -113,18 +134,17 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
     if (created && mine()) {
       setNoteId(id);
       ownNote = id;
-      editor?.focus();
       props.onCreated?.(id);
     }
   };
 
   onMount(() => {
-    editor?.focus();
+    focusEnd();
     autosize();
     window.addEventListener('resize', autosize);
     const off = [
       registerFlush(flush),
-      onEditorFocus(() => editor?.focus()),
+      onEditorFocus(focusEnd),
       onCommand('save', () => void flush()),
       onCommand('history', async () => {
         await flush(); // a draft gets its id here
