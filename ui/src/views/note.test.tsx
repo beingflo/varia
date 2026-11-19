@@ -21,6 +21,25 @@ describe('Note view', () => {
     expect(await repo.listNotes()).toHaveLength(0);
   });
 
+  it('pulses the stamp only when a save leaves its label unchanged', async () => {
+    const animate = vi.fn();
+    Element.prototype.animate = animate as unknown as Element['animate'];
+    const repo = testRepo();
+    renderWithRepo(() => <NoteView />, repo);
+    const editor = await screen.findByLabelText('note body');
+
+    fireEvent.input(editor, { target: { value: 'first' } });
+    runCommand('save');
+    await waitFor(() => expect(screen.getByText('now')).toBeTruthy());
+    expect(animate).not.toHaveBeenCalled(); // "now" appeared, that is feedback enough
+
+    fireEvent.input(editor, { target: { value: 'second' } });
+    runCommand('save');
+    await waitFor(() => expect(animate).toHaveBeenCalledTimes(1));
+    // CodeMirror replaces the editor in a real browser; the stamp is the element being pulsed.
+    expect(animate.mock.instances[0]).toBe(screen.getByText('now'));
+  });
+
   it('creates the draft on save, only once', async () => {
     const repo = testRepo();
     const created = vi.fn();

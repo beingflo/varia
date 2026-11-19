@@ -60,6 +60,25 @@ another host is a valid backup. Daily cron is enough; history that is a day behi
 Health: an unauthenticated `/healthz` and nothing else to watch — the log either accepts writes or it
 does not.
 
+## Implementation notes
+
+Small deviations worth knowing, all in `server/`:
+
+- **One connection, not a pool.** A `Mutex<Connection>` for reads and writes. Writes serialise
+  anyway and pulls are 500-row scans; a pool is only worth it once sync requests queue behind each
+  other.
+- **`server_seq` is `MAX + 1` per owner** inside the push transaction, not a counter column. The
+  insert order is the sequence order, and a retried push keeps its row.
+- **A push does not return its own ops.** The pull floor is the highest sequence that request
+  wrote, so a client never re-receives what it just sent, even at cursor 0.
+- **The signup rate limit is keyed on `X-Forwarded-For`.** The container publishes on loopback and
+  Caddy sets the header, so nothing off-host can forge it; tests set it directly.
+- **Envelope checks before anything is stored**: labels non-empty, printable and bounded, `seq >= 0`,
+  `created > 0`, ciphertext 28 bytes to 4 MiB (nonce plus tag is the floor). A rejected request
+  writes nothing.
+- **Partial pushes are allowed up to the cap.** The ops that fit are stored, the request answers
+  `403 storage_cap`, and the client keeps the rest pending.
+
 ## Tests
 
 The interesting logic is the log, not the HTML: push/pull cursors, duplicate pushes, cap enforcement,

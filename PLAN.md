@@ -42,7 +42,7 @@ the readiness marker the browser tests wait on.
 
 ## Phase 2: Sync
 
-- [ ] service: signup, tokens, `/api/sync`, cap, rate limits, WAL, headers
+- [x] service: signup, tokens, `/api/sync`, cap, rate limits, WAL, headers (`server/`, 10 tests)
 - [ ] client: key + enrolment code (text + download), device id, outbox, cursors, triggers
 - [ ] conflict policy as decided: highest lamport head wins, both branches retained
 - [ ] single binary serving the bundled UI, deployed like acta

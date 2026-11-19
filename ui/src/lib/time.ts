@@ -1,3 +1,21 @@
+import { createSignal, onCleanup, onMount } from 'solid-js';
+
+/** A wall clock that steps every 10 s, so a relative stamp ages while the page stays open. */
+export function useTicker(ms = 10_000) {
+  const [now, setNow] = createSignal(Date.now());
+  onMount(() => {
+    const timer = setInterval(() => setNow(Date.now()), ms);
+    onCleanup(() => clearInterval(timer));
+  });
+  return now;
+}
+
+/** A save that leaves the label unchanged ("now" to "now") gets a short fade instead. */
+export function pulseStamp(el: Element | undefined) {
+  if (!el || globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  el.animate?.([{ opacity: 0.25 }, { opacity: 1 }], { duration: 600, easing: 'ease-out' });
+}
+
 const UNITS: [limit: number, div: number, label: string][] = [
   [60, 1, 's'],
   [3600, 60, 'm'],

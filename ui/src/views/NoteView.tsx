@@ -5,7 +5,7 @@ import { useRepo } from '../db/context';
 import { onCommand, onEditorFocus } from '../lib/commands';
 import { registerFlush } from '../lib/flush';
 import { signalViewReady } from '../lib/ready';
-import { ago } from '../lib/time';
+import { ago, pulseStamp, useTicker } from '../lib/time';
 
 /**
  * The editor. With no `id` this is the landing draft: nothing exists in the database until
@@ -17,8 +17,10 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
   const [body, setBody] = createSignal('');
   const [saved, setSaved] = createSignal('');
   const [updated, setUpdated] = createSignal(0);
+  const now = useTicker();
   const [historyOpen, setHistoryOpen] = createSignal(false);
   let editor: EditorApi | undefined;
+  let stampEl: HTMLSpanElement | undefined;
 
   // Bumped on every keystroke: a load that resolves after the user started typing must not
   // overwrite what they wrote (the body it read is the older baseline, kept as `saved`).
@@ -100,7 +102,10 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
     await repo.saveBody(id, text);
     if (mine()) {
       setSaved(text);
-      setUpdated(Date.now());
+      const at = Date.now();
+      const same = updated() ? ago(updated()) === ago(at) : false;
+      setUpdated(at);
+      if (same) pulseStamp(stampEl); // "now" to "now" would otherwise look like nothing happened
     }
     if (created && mine()) {
       setNoteId(id);
@@ -140,7 +145,9 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
         }}
       />
       <Show when={updated()}>
-        <span class="stamp muted small">{ago(updated())}</span>
+        <span ref={stampEl} class="stamp muted small">
+          {ago(updated(), now())}
+        </span>
       </Show>
       <Show when={historyOpen() && noteId()}>
         <History noteId={noteId()!} onClose={() => setHistoryOpen(false)} onRestore={() => void load(noteId())} />

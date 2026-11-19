@@ -5,7 +5,7 @@ import { between } from '../db/ops';
 import { onCommand, onEditorFocus } from '../lib/commands';
 import { registerFlush } from '../lib/flush';
 import { signalViewReady } from '../lib/ready';
-import { ago } from '../lib/time';
+import { ago, useTicker } from '../lib/time';
 
 const INDENT_REM = 1.4;
 const WARN_MS = 1200;
@@ -35,6 +35,7 @@ export default function TodoView(props: { id: string }) {
   const [title, setTitle] = createSignal('');
   const [savedTitle, setSavedTitle] = createSignal('');
   const [updated, setUpdated] = createSignal(0);
+  const now = useTicker();
   const [all, setAll] = createSignal<Item[]>([]);
   const [warnAt, setWarnAt] = createSignal<{ id: string; left: number } | null>(null);
   let addInput: HTMLInputElement | undefined;
@@ -451,7 +452,7 @@ export default function TodoView(props: { id: string }) {
       </div>
 
       <Show when={updated()}>
-        <span class="stamp muted small">{ago(updated())}</span>
+        <span class="stamp muted small">{ago(updated(), now())}</span>
       </Show>
     </main>
   );
