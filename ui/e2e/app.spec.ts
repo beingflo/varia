@@ -124,39 +124,47 @@ test('restores an old version from history', async ({ page }) => {
   await expect(editor(page)).toHaveValue('first draft');
 });
 
-test('runs a todo list without a single button', async ({ page }) => {
+test('runs a todo list: add, click to check off, show done, edit, delete', async ({ page }) => {
   await page.goto('/');
   await ready(page);
   await page.keyboard.press(`${MOD}+Shift+E`);
 
+  const add = page.getByLabel('new item');
+  await expect(add).toBeFocused(); // a new list starts at the item field, not the title
+
   const title = page.getByLabel('list title');
-  await expect(title).toHaveValue('list');
+  await expect(title).toHaveValue('');
+  await expect(title).toHaveAttribute('placeholder', 'Untitled list');
   await title.fill('work');
   await press(page, 's');
 
-  const add = page.getByLabel('new item');
+  await expect(add).toHaveAttribute('placeholder', 'todo');
   await add.fill('buy milk');
   await add.press('Enter');
   await add.fill('book dentist');
   await add.press('Enter');
-  await expect(page.getByRole('textbox', { name: 'buy milk' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'buy milk', exact: true })).toBeVisible();
 
-  await page.getByRole('checkbox', { name: 'buy milk' }).click();
-  await expect(page.getByRole('textbox', { name: 'buy milk' })).toHaveCount(0);
+  // Checking off is a click on the row itself.
+  await page.getByRole('button', { name: 'buy milk', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'buy milk', exact: true })).toHaveCount(0);
 
   await page.keyboard.press(`${MOD}+Shift+A`);
-  await expect(page.getByRole('textbox', { name: 'buy milk' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'buy milk', exact: true })).toBeVisible();
 
-  const item = page.getByRole('textbox', { name: 'book dentist' });
+  // Editing appears as a small button on hover.
+  await page.getByRole('button', { name: 'book dentist', exact: true }).hover();
+  await page.getByRole('button', { name: 'edit book dentist' }).click();
+  const item = page.getByLabel('edit item');
   await item.fill('book dentist urgently');
-  await item.press('Tab');
-  await expect(page.getByRole('textbox', { name: 'book dentist urgently' })).toBeVisible();
+  await item.press('Enter');
+  await expect(page.getByRole('button', { name: 'book dentist urgently', exact: true })).toBeVisible();
 
-  await page.getByRole('textbox', { name: 'book dentist urgently' }).fill('');
-  await page.getByRole('textbox', { name: 'book dentist urgently' }).press('Tab');
-  await expect(page.getByRole('textbox', { name: 'book dentist urgently' })).toHaveCount(0);
-
-  await expect(page.locator('main button')).toHaveCount(0);
+  await page.getByRole('button', { name: 'book dentist urgently', exact: true }).hover();
+  await page.getByRole('button', { name: 'edit book dentist urgently' }).click();
+  await page.getByLabel('edit item').fill('');
+  await page.getByLabel('edit item').press('Enter');
+  await expect(page.getByRole('button', { name: 'book dentist urgently', exact: true })).toHaveCount(0);
 });
 
 test('ctrl+j and ctrl+k move the selection without closing the list', async ({ page }) => {
@@ -248,6 +256,35 @@ test('reveals the opened note already loaded, never the previous one', async ({ 
     .toBeGreaterThan(0);
   const [revealed] = await page.evaluate(() => (window as unknown as { __revealed: unknown[] }).__revealed);
   expect(revealed).toBe('alpha body');
+});
+
+test('adds an item without the placeholder flashing back first', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await page.keyboard.press(`${MOD}+Shift+E`);
+  const add = page.getByLabel('new item');
+  await add.fill('flicker item');
+
+  // Watch every frame from Enter onwards: an empty field with no row is one flicker, a filled
+  // field next to an already added row is the other.
+  await page.evaluate(() => {
+    (window as unknown as { __emptyFrames: number[] }).__emptyFrames = [];
+    let frame = 0;
+    const tick = () => {
+      const input = document.querySelector('.add') as HTMLInputElement;
+      const present = [...document.querySelectorAll('.item-toggle')].some((el) => el.textContent === 'flicker item');
+      if (frame > 0 && ((input.value === '' && !present) || (input.value !== '' && present))) {
+        (window as unknown as { __emptyFrames: number[] }).__emptyFrames.push(frame);
+      }
+      if (++frame < 60) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+
+  await add.press('Enter');
+  await expect(page.getByRole('button', { name: 'flicker item', exact: true })).toBeVisible();
+  await expect(add).toHaveValue('');
+  expect(await page.evaluate(() => (window as unknown as { __emptyFrames: number[] }).__emptyFrames)).toEqual([]);
 });
 
 test('opens a long note at the top with the caret at the end', async ({ page }) => {

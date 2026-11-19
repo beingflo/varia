@@ -154,6 +154,8 @@ function applySnapshot(db: Db, op: Op): void {
 
 function applyTodoOp(db: Db, op: Op & { payload: ItemChange }): void {
   const change: ItemChange = { ...op.payload, lamport: op.lamport, device: op.device, created: op.created };
+  // Item changes are changes to the list: recency and the "edited" label must follow them.
+  db.run('UPDATE note SET updated = ? WHERE id = ? AND updated < ?', [op.created, change.note_id, op.created]);
   db.run(
     `INSERT OR IGNORE INTO todo_item_op(device, seq, item_id, note_id, fields, lamport, created)
      VALUES(?,?,?,?,?,?,?)`,

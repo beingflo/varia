@@ -22,6 +22,30 @@ describe('Todo view', () => {
     await waitFor(async () => expect((await repo.items(id)).map((i) => i.text)).toEqual(['enter item', 'blur item']));
   });
 
+  it('adds the row and clears the field in a single commit', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('todo');
+    // Slow the follow-up note read: with two separate commits, the row would appear while the
+    // field still shows the text.
+    const slow = {
+      ...repo,
+      getNote: async (noteId: string) => {
+        await new Promise((r) => setTimeout(r, 40));
+        return repo.getNote(noteId);
+      },
+    };
+    renderWithRepo(() => <TodoView id={id} />, slow);
+
+    const add = await screen.findByLabelText('new item');
+    fireEvent.input(add, { target: { value: 'fresh' } });
+    fireEvent.keyDown(add, { key: 'Enter' });
+
+    await new Promise((r) => setTimeout(r, 15));
+    const rowPresent = screen.queryByRole('button', { name: 'fresh', exact: true }) !== null;
+    const fieldFilled = (screen.getByLabelText('new item') as HTMLInputElement).value !== '';
+    expect(rowPresent && fieldFilled).toBe(false);
+  });
+
   it('hides checked items until the toggle-done command runs', async () => {
     const repo = testRepo();
     const id = await repo.createNote('todo', 'work');
@@ -29,29 +53,32 @@ describe('Todo view', () => {
     await repo.addItem(id, 'two');
     renderWithRepo(() => <TodoView id={id} />, repo);
 
-    fireEvent.click(await screen.findByRole('checkbox', { name: 'one' }));
-    await waitFor(() => expect(screen.queryByDisplayValue('one')).toBeNull());
+    // The whole row toggles: no checkbox.
+    fireEvent.click(await screen.findByRole('button', { name: 'one' }));
+    await waitFor(() => expect(screen.queryByText('one')).toBeNull());
 
     runCommand('toggle-done');
-    expect(await screen.findByDisplayValue('one')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'one' })).toBeTruthy();
     runCommand('toggle-done');
-    await waitFor(() => expect(screen.queryByDisplayValue('one')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('one')).toBeNull());
     expect(await repo.items(id, true)).toHaveLength(2);
     expect(one).toBeTruthy();
   });
 
-  it('edits item text and deletes an item by emptying it', async () => {
+  it('edits an item through the Edit button and deletes it by emptying it', async () => {
     const repo = testRepo();
     const id = await repo.createNote('todo');
     await repo.addItem(id, 'typo');
     renderWithRepo(() => <TodoView id={id} />, repo);
 
-    const text = await screen.findByRole('textbox', { name: 'typo' });
+    fireEvent.click(await screen.findByRole('button', { name: 'edit typo' }));
+    const text = await screen.findByRole('textbox', { name: 'edit item' });
     fireEvent.input(text, { target: { value: 'fixed' } });
     fireEvent.blur(text);
     await waitFor(async () => expect((await repo.items(id))[0].text).toBe('fixed'));
 
-    const again = await screen.findByRole('textbox', { name: 'fixed' });
+    fireEvent.click(await screen.findByRole('button', { name: 'edit fixed' }));
+    const again = await screen.findByRole('textbox', { name: 'edit item' });
     fireEvent.input(again, { target: { value: '  ' } });
     fireEvent.blur(again);
     await waitFor(async () => expect(await repo.items(id)).toEqual([]));
@@ -72,7 +99,17 @@ describe('Todo view', () => {
     await waitFor(async () => expect(await repo.getNote(id)).toMatchObject({ title: 'errands 2' }));
   });
 
-  it('refuses to blank the title', async () => {
+  it('starts a new list untitled, with a placeholder', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('todo');
+    renderWithRepo(() => <TodoView id={id} />, repo);
+
+    const title = await screen.findByLabelText('list title');
+    expect(title).toHaveProperty('value', '');
+    expect(title.getAttribute('placeholder')).toBe('Untitled list');
+  });
+
+  it('allows blanking the title of an existing list', async () => {
     const repo = testRepo();
     const id = await repo.createNote('todo', 'work');
     renderWithRepo(() => <TodoView id={id} />, repo);
@@ -81,7 +118,6 @@ describe('Todo view', () => {
     fireEvent.input(title, { target: { value: '' } });
     fireEvent.blur(title);
 
-    await new Promise((r) => setTimeout(r, 20));
-    expect(await repo.getNote(id)).toMatchObject({ title: 'work' });
+    await waitFor(async () => expect(await repo.getNote(id)).toMatchObject({ title: '' }));
   });
 });

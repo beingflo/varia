@@ -47,8 +47,9 @@ describe('App', () => {
     renderWithRepo(() => <App />, repo);
 
     mod('new-list');
-    await waitFor(() => expect(screen.getByLabelText('list title')).toHaveProperty('value', 'list'));
+    await waitFor(() => expect(screen.getByLabelText('list title')).toHaveProperty('value', ''));
     expect(await repo.listNotes()).toHaveLength(1);
+    expect(document.activeElement).toBe(screen.getByLabelText('new item'));
   });
 
   it('keeps the text on screen after saving a draft', async () => {

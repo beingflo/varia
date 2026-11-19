@@ -24,7 +24,11 @@ a { color: inherit; }
   padding: 1.5rem clamp(1rem, 3vw, 3rem) 2rem; display: flex; flex-direction: column;
 }
 
-input, textarea { font: inherit; color: inherit; background: none; border: none; outline: none; box-shadow: none; padding: 0; }
+input, textarea, button {
+  font: inherit; color: inherit; background: none; border: none; outline: none;
+  box-shadow: none; padding: 0; margin: 0;
+}
+button { cursor: pointer; }
 input::placeholder, textarea::placeholder { color: var(--muted); }
 button:focus-visible, a:focus-visible { outline: 2px solid var(--muted); outline-offset: 3px; }
 
@@ -36,19 +40,23 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--muted); outline
 
 .meta { width: 100%; max-width: var(--measure); margin: 1rem auto 0; display: flex; align-items: center; gap: 1rem; }
 .stamp { position: fixed; right: 0.75rem; bottom: 0.6rem; pointer-events: none; letter-spacing: 0.04em; }
-.tags { flex: 1; min-width: 0; color: var(--muted); font-size: 0.85rem; }
+.tags { flex: 1; min-width: 0; font-size: 0.85rem; }
 
 .card {
   display: flex; flex-direction: column; flex: 1; min-height: 60vh;
   width: 100%; max-width: var(--measure); margin-inline: auto;
 }
-.title { width: 100%; font-size: 1.3rem; font-weight: 600; margin-bottom: 0.8rem; }
+.title { width: 100%; font-size: 1.4rem; font-weight: 400; margin-bottom: 0.8rem; }
 .items { list-style: none; margin: 0; padding: 0; }
-.items li { display: flex; align-items: baseline; gap: 0.6rem; padding: 0.1rem 0; }
+.items li { position: relative; display: flex; align-items: baseline; gap: 0.5rem; padding: 0.1rem 0; }
 .items li.done .item-text { color: var(--muted); text-decoration: line-through; }
-.item-text { flex: 1; }
-.items input[type='checkbox'] { accent-color: var(--muted); }
-.add { width: 100%; padding: 0.55rem 0 0.1rem; margin-top: 0.4rem; color: var(--muted); border-top: 1px solid var(--line); }
+.item-row { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 0.55rem; cursor: pointer; }
+.item-text { min-width: 0; font: inherit; text-align: left; }
+.item-input { flex: 1; }
+.item-toggle { color: inherit; }
+.edit { color: var(--muted); font-size: 0.7rem; opacity: 0; }
+.items li:hover .edit, .edit:focus-visible { opacity: 1; }
+.add { width: 100%; padding: 0.1rem 0; margin: 0; }
 
 /* Overlays: fullscreen and opaque, never a dimmed panel over content. */
 .overlay {

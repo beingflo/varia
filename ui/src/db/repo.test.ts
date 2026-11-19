@@ -187,6 +187,21 @@ describe('todo items', () => {
     expect(itemOp(db, list, id, { text: 'from b' }, 4, 'dev-b')).toBe(false);
   });
 
+  it('moves the list timestamp with its items', async () => {
+    const db = fresh();
+    const list = repo.createNote(db, 'todo', 'work');
+    const created = repo.getNote(db, list)!.updated;
+
+    await new Promise((r) => setTimeout(r, 20));
+    const item = repo.addItem(db, list, 'x');
+    const afterAdd = repo.getNote(db, list)!.updated;
+    expect(afterAdd).toBeGreaterThan(created);
+
+    await new Promise((r) => setTimeout(r, 20));
+    repo.toggleItem(db, item);
+    expect(repo.getNote(db, list)!.updated).toBeGreaterThan(afterAdd);
+  });
+
   it('keeps a change history per item', () => {
     const db = fresh();
     const list = repo.createNote(db, 'todo');

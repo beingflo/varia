@@ -39,7 +39,7 @@ export default function App() {
       onCommand('new-list', async () => {
         await flushAll();
         setListOpen(false);
-        setOpen({ kind: 'todo', id: await repo.createNote('todo', 'list') });
+        setOpen({ kind: 'todo', id: await repo.createNote('todo') });
       }),
       onCommand('delete', async () => {
         // Flush first: a draft just saved by ⌘S only has an id once its flush finished.
