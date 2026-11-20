@@ -28,7 +28,18 @@ export default defineConfig({
       // Stale precached bundles are the one way an old client keeps running an old bug.
       registerType: 'autoUpdate',
       workbox: { cleanupOutdatedCaches: true },
-      manifest: { name: 'varia', start_url: '/', display: 'standalone', background_color: '#111', theme_color: '#111' },
+      manifest: {
+        name: 'varia',
+        start_url: '/',
+        display: 'standalone',
+        background_color: '#111',
+        theme_color: '#111',
+        icons: [
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+      },
     }),
   ],
   worker: { format: 'es' },
