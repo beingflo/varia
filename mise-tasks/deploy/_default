@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+#MISE description="Build, ship and deploy varia (no secrets: the log is encrypted client-side)"
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$root"
+# shellcheck source=/dev/null
+source "$root/mise-tasks/lib/env.sh"
+load_deploy_env
+
+host="${VARIA_HOST:-}"
+domain="${VARIA_DOMAIN:-}"
+port="${VARIA_PORT:-8080}"
+[[ -n "$host" ]] || die "VARIA_HOST is empty; put it in .deploy.env (committed, non-secret)"
+
+command -v podman >/dev/null || die "podman not found"
+podman info >/dev/null 2>&1 || die "podman machine is not running"
+
+tag="$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
+image="localhost/varia:${tag}"
+
+note "building ${image}"
+podman build -t "$image" .
+
+note "shipping ${image} to ${host}"
+podman save "$image" | zstd -q -T0 | ssh "$host" 'zstd -q -d | podman load'
+ssh "$host" "podman tag ${image} localhost/varia:current"
+
+note "installing varia.container (${tag})"
+sed -e "s|__TAG__|${tag}|g" varia.container \
+    | ssh "$host" 'mkdir -p "$HOME/.config/containers/systemd" && cat > "$HOME/.config/containers/systemd/varia.container"'
+
+note "restarting"
+ssh "$host" 'systemctl --user daemon-reload && systemctl --user restart varia'
+
+# A container that dies while starting leaves the unit inactive after a clean
+# exit, so nothing fails loudly. Check before reporting success.
+if ! ssh "$host" 'podman ps --format "{{.Names}}" | grep -qx systemd-varia'; then
+    ssh "$host" "systemctl --user status varia --no-pager -n 20; echo; podman logs --tail 40 systemd-varia 2>&1" >&2 || true
+    die "varia did not stay running after the restart"
+fi
+
+note "health check"
+if ssh "$host" "curl -sf --max-time 10 -o /dev/null http://127.0.0.1:${port}/healthz"; then
+    echo "ok"
+else
+    ssh "$host" "journalctl --user -u varia -n 50" >&2 || true
+    die "/healthz is not ok"
+fi
+
+# The isolation headers are what make the local database work in the browser at
+# all; if Caddy drops one the app is broken in a way no status code shows.
+note "checking the isolation headers behind ${domain:-the proxy}"
+if [[ -n "$domain" ]]; then
+    headers="$(curl -sI --max-time 10 "https://${domain}/" || true)"
+    for header in cross-origin-opener-policy cross-origin-embedder-policy cross-origin-resource-policy; do
+        grep -qi "^${header}:" <<<"$headers" || echo "WARN: ${header} is missing from https://${domain}/ — set it in Caddy"
+    done
+fi
+
+note "pruning old images (keeping 5)"
+ssh "$host" 'podman images --format "{{.Repository}}:{{.Tag}}" \
+    | grep -E "^localhost/varia:" | grep -v ":current$" | sort \
+    | head -n -5 | xargs -r podman rmi >/dev/null 2>&1 || true'
+
+note "deployed ${image}"

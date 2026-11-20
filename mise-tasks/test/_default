@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#MISE description="Typecheck, unit/component tests and service tests (no browser needed)"
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$root"
+# shellcheck source=/dev/null
+source "$root/mise-tasks/lib/env.sh"
+
+note "typecheck (ui)"
+(cd ui && npx tsc -p tsconfig.json --noEmit)
+
+note "unit and component tests (ui)"
+(cd ui && npx vitest run)
+
+note "service tests"
+cargo test --manifest-path server/Cargo.toml

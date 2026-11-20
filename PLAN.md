@@ -48,7 +48,8 @@ the readiness marker the browser tests wait on.
 - [x] client: triggers (push on write, start, foreground, 60 s timer, hidden flush), enrolment
       overlay (`⌘⇧S`: paste a code or create an account), sync status and manual sync
 - [ ] conflict policy as decided: highest lamport head wins, both branches retained
-- [ ] single binary serving the bundled UI, deployed like acta
+- [x] single binary serving the bundled UI: Containerfile (~108 MB, verified by running it locally),
+      quadlet unit, `mise run deploy` modelled on acta's (no secrets to ship), `mise run dev|test|test:e2e`
 
 ## Phase 3: Mobile polish
 

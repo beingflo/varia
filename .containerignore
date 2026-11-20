@@ -1,0 +1,18 @@
+# Keep generated and machine-local files out of the build context. The image is
+# the binary plus ui/dist, so nothing here is needed inside it.
+.git
+.jj
+.DS_Store
+
+# Build output and dependencies
+server/target/
+ui/node_modules/
+ui/dist/
+ui/dev-dist/
+
+# Local databases, test artifacts and deploy configuration
+*.sqlite
+*.sqlite-*
+test-results/
+playwright-report/
+.deploy.secrets

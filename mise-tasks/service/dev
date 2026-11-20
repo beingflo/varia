@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+#MISE description="Run the sync service on 127.0.0.1:8099 (the Vite dev server proxies /api here)"
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$root"
+
+# A file in the repo so a dev database survives a restart; ignored by git.
+export VARIA_ADDR="${VARIA_ADDR:-127.0.0.1:8099}"
+export VARIA_DB="${VARIA_DB:-$root/.varia-dev.sqlite}"
+export VARIA_UI_DIR="${VARIA_UI_DIR:-}"
+# The dev server serves the UI itself; the service only needs the API.
+exec cargo run --manifest-path server/Cargo.toml

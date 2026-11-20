@@ -1,0 +1,26 @@
+[Unit]
+Description=varia notes and sync service
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=localhost/varia:__TAG__
+# Caddy reaches it on the loopback port; nothing else on the host needs the port.
+PublishPort=127.0.0.1:8080:8080
+
+# The encrypted op log lives in one SQLite file on a named volume. That file is
+# the whole server state: a copy of it is a backup, and it is unreadable without
+# the client keys anyway.
+Volume=varia-data:/data
+
+# Run as the deploying user: keep-id maps the host user onto container uid 1000,
+# which is the uid the image declares and the one that already owns the volume.
+User=1000:1000
+UserNS=keep-id:uid=1000,gid=1000
+
+# It binds 8080 and writes one directory; nothing it execs may gain a capability.
+NoNewPrivileges=true
+DropCapability=all
+
+[Install]
+WantedBy=default.target

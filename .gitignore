@@ -6,4 +6,9 @@ test-results/
 playwright-report/
 *.local
 .env*
+!.deploy.env
 .DS_Store
+
+# Dev database written by `mise run service:dev`
+.varia-dev.sqlite
+.varia-dev.sqlite-*

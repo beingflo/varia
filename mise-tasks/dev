@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+#MISE description="Run the service and frontend dev servers together"
+set -euo pipefail
+
+# Job control puts each server in its own process group: signalling the group
+# reaches the server itself (mise does not forward signals to its task), and the
+# group lets us stop one side without hitting the other. SIGINT rather than
+# SIGTERM, because the servers should shut down the way Ctrl-C makes them.
+set -m
+mise run service:dev &
+service=$!
+mise run ui:dev &
+ui=$!
+
+stop() {
+    for pid in "$service" "$ui"; do
+        kill -INT -- -"$pid" 2>/dev/null || true
+    done
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        kill -0 "$service" 2>/dev/null || kill -0 "$ui" 2>/dev/null || return 0
+        sleep 0.2
+    done
+    for pid in "$service" "$ui"; do
+        kill -TERM -- -"$pid" 2>/dev/null || true
+    done
+    wait "$service" "$ui" 2>/dev/null || true
+}
+trap stop EXIT
+trap 'exit 130' INT TERM
+
+# bash 3.2 has no `wait -n`: poll until one side goes away, then stop the other.
+while kill -0 "$service" 2>/dev/null && kill -0 "$ui" 2>/dev/null; do
+    sleep 1
+done

@@ -52,8 +52,29 @@ VFS spawns without it, while Chrome happens to allow it. `/api/*` responses need
 
 ## Operations
 
-A container running under Podman/Quadlet, Caddy terminating TLS and
-proxying to the container's loopback port, the SQLite file on a named volume.
+A container running under Podman/Quadlet, Caddy terminating TLS and proxying to the container's
+loopback port, the SQLite file on a named volume.
+
+```
+Containerfile     node build (ui) → rust build (server) → debian-slim runtime, ~108 MB
+varia.container   quadlet unit: loopback port, varia-data:/data, keep-id uid 1000, no capabilities
+.deploy.env       VARIA_HOST, VARIA_DOMAIN, VARIA_PORT — non-secret, committed
+mise-tasks/       dev, service:dev, ui:dev, test, test:e2e, deploy, deploy:build
+```
+
+`mise run deploy` builds the image, ships it over SSH (`podman save | zstd | ssh | podman load`),
+installs the unit with the build tag substituted, restarts it, then checks three things: the
+container is running, `127.0.0.1:$VARIA_PORT/healthz` answers, and `https://$VARIA_DOMAIN/` carries
+all three isolation headers. A container that exits on startup leaves the unit inactive without an
+error, which is why the running check comes first.
+
+Unlike the service this repo borrows its deploy from, nothing is secret: the log is encrypted
+client-side, so there are no podman secrets, no sops file and nothing to rotate. Caddy needs no
+header configuration — the binary sets COOP/COEP/CORP on every response — only a reverse proxy to
+the loopback port, in the separate `deployment` checkout.
+
+`mise run dev` runs both dev servers with job control, so Ctrl-C stops both. The service listens on
+`127.0.0.1:8099` and writes `.varia-dev.sqlite`; Vite proxies `/api` there.
 
 Backups are dull because the data is already encrypted: the file copy (or `sqlite3 .backup`) to
 another host is a valid backup. Daily cron is enough; history that is a day behind is still history.
