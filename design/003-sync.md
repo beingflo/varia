@@ -76,7 +76,7 @@ never split off from the account.
 
 ## Limits
 
-- op ≤ 4 MB, request ≤ 16 MB.
+- op ≤ 4 MB, request ≤ 16 MB, at most 2,048 ops per request (a client batches at most 500).
 - 500 MB of stored ciphertext per account, counted as `sum(length(ciphertext))`.
 - `/api/sync`: token bucket, burst 10, refill 30/min. Commits are coarse (blur, `⌘S`, navigation),
   so ordinary writing produces a push per save rather than per keystroke, so anything tighter throttles ordinary use.

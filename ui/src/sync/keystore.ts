@@ -41,7 +41,12 @@ export const idbAccount: AccountStore = {
     try {
       return await new Promise<Account | undefined>((resolve, reject) => {
         const request = db.transaction(STORE, 'readonly').objectStore(STORE).get('account');
-        request.onsuccess = () => resolve((request.result as Account | undefined) ?? undefined);
+        request.onsuccess = () => {
+          const record = request.result as Account | undefined;
+          // A record without both halves is not an account: treat it as absent rather than crash
+          // the engine on a partial write or a corrupted store.
+          resolve(record && typeof record.token === 'string' && record.key instanceof CryptoKey ? record : undefined);
+        };
         request.onerror = () => reject(request.error ?? new Error('key store read failed'));
       });
     } finally {

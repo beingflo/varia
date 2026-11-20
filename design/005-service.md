@@ -29,8 +29,9 @@ highest `server_seq`, so a client can notice that the log is shorter than what i
 only ever create or add indexes here — the note schema lives in the client, which is what keeps the
 server cheap to operate.
 
-`rusqlite` with the `bundled` feature (it needs no FTS5: search is client-side). Statement timeouts
-short, one writer connection, a small read pool.
+`rusqlite` with the `bundled` feature (it needs no FTS5: search is client-side). WAL, short
+statement timeouts, one connection behind a mutex for reads and writes — pulls are small enough
+that a pool would only matter once sync requests queue behind each other.
 
 ## Limits and abuse
 
@@ -40,9 +41,16 @@ short, one writer connection, a small read pool.
   `sum(length(ciphertext))`; over the cap the push accepts a prefix (duplicates always count as
   accepted) and the pull still happens — a device with pending writes is never split off; pulls keep
   working so data can always be rescued.
-- Per-op and per-request size ceilings before the body is buffered.
+- Per-op and per-request size ceilings before the body is buffered, and at most 2,048 ops per
+  request (a real client batches at most 500): one request must not mean unbounded per-op work.
 - TLS only, behind Caddy. The main privacy requirement is the URL: nothing may leak note content into
   logs, and no op body is ever logged at any level.
+- The binary binds `127.0.0.1` unless `VARIA_ADDR` says otherwise (the container sets `0.0.0.0`
+  because the quadlet publishes the host side on loopback). Exposure without the proxy is the one
+  real deployment footgun: plaintext HTTP, and `X-Forwarded-For` is trusted as the signup rate
+  limit's key, so a directly reachable service lets anyone name their own bucket and mass-create
+  accounts — disk is the only ceiling, since the cap is per account. Loopback plus Caddy is the
+  supported posture; the container pins it.
 
 ## Headers
 

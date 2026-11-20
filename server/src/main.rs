@@ -6,7 +6,10 @@ use varia::{AppState, Config, Store, router};
 
 #[tokio::main]
 async fn main() {
-    let addr: SocketAddr = std::env::var("VARIA_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into()).parse().expect("VARIA_ADDR");
+    // Loopback unless exposure is asked for in so many words: plaintext HTTP plus a trusted
+    // X-Forwarded-For are only safe behind the reverse proxy on the host.
+    let addr: SocketAddr =
+        std::env::var("VARIA_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".into()).parse().expect("VARIA_ADDR");
     let db = std::env::var("VARIA_DB").unwrap_or_else(|_| "/data/varia.sqlite".into());
     let ui = std::env::var("VARIA_UI_DIR").ok().map(PathBuf::from);
 

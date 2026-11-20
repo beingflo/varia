@@ -86,6 +86,29 @@ async fn signup_is_rate_limited_per_ip() {
     assert_eq!(headers.get(header::RETRY_AFTER).unwrap(), "60");
 
     signup(&app, "10.0.0.2").await; // a different ip is a different bucket
+
+    // Direct connections (no proxy header) share one bucket, and two in a row trip it.
+    let direct = || {
+        Request::post("/api/signup")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from("{}"))
+            .unwrap()
+    };
+    let (status, _, _) = send(&app, direct()).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _, _) = send(&app, direct()).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+
+    // KNOWN LIMIT, pinned on purpose: a direct client can name its own bucket by setting the
+    // header. The loopback bind is the real boundary — off-host nobody reaches the port, and
+    // on-host an attacker has better things to do than signups.
+    let forged = Request::post("/api/signup")
+        .header("x-forwarded-for", "6.6.6.6")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from("{}"))
+        .unwrap();
+    let (status, _, _) = send(&app, forged).await;
+    assert_eq!(status, StatusCode::OK);
 }
 
 #[tokio::test]
@@ -237,6 +260,22 @@ async fn a_full_account_accepts_a_prefix_and_still_pulls() {
     assert_eq!(status, StatusCode::OK, "a full account can still pull");
     assert_eq!(body["ops"].as_array().unwrap().len(), 1);
     assert_eq!(body["usage_bytes"], 28);
+}
+
+#[tokio::test]
+async fn rejects_a_push_with_too_many_ops() {
+    let app = app_with(Config { max_ops: 2, ..Config::default() });
+    let token = signup(&app, "10.0.0.1").await;
+
+    // A real client batches at most 500 ops; anything past the ceiling is refused whole.
+    let ops: Vec<Value> = (0..3).map(|seq| op(seq, &payload(seq as u8))).collect();
+    let (status, _, body) = send(&app, sync_request(&token, 0, ops)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "too_many_ops");
+
+    // Nothing was stored.
+    let (_, _, body) = send(&app, sync_request(&token, 0, vec![])).await;
+    assert_eq!(body["ops"].as_array().unwrap().len(), 0);
 }
 
 #[tokio::test]

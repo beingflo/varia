@@ -137,7 +137,8 @@ export function createEngine(options: {
 
   /** Creates an account and returns the key once: it is not stored, by design. */
   async function signup(): Promise<{ token: string; key: string }> {
-    const response = await fetch(`${base}/api/signup`, { method: 'POST', body: '{}' });
+    // A stalled request must fail rather than leave the panel's button spinning forever.
+    const response = await fetch(`${base}/api/signup`, { method: 'POST', body: '{}', signal: AbortSignal.timeout(20_000) });
     if (response.status === 404) throw new Error('no sync service at this address (404)');
     if (response.status === 429) {
       const wait = response.headers.get('retry-after');

@@ -24,6 +24,9 @@ pub struct Config {
     pub pull_limit: usize,
     pub max_op_bytes: usize,
     pub max_request_bytes: usize,
+    /// Ops accepted per request. A real client batches at most 500; a bigger push is a hostile
+    /// or broken one, and the per-op work is not something a single request should unbounded.
+    pub max_ops: usize,
     pub sync_burst: f64,
     pub sync_per_min: f64,
     pub signup_per_min: f64,
@@ -36,6 +39,7 @@ impl Default for Config {
             pull_limit: 2000,
             max_op_bytes: 4 * 1024 * 1024,
             max_request_bytes: 16 * 1024 * 1024,
+            max_ops: 2048,
             sync_burst: 10.0,
             sync_per_min: 30.0,
             signup_per_min: 1.0,
@@ -153,6 +157,9 @@ async fn sync(
         return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "rate_limited").retry_after(wait));
     }
     let owner = state.store.owner_for(&token)?.ok_or_else(|| ApiError::unauthorized())?;
+    if request.ops.len() > state.cfg.max_ops {
+        return Err(ApiError::new(StatusCode::BAD_REQUEST, "too_many_ops"));
+    }
 
     let mut incoming = Vec::with_capacity(request.ops.len());
     let mut payloads: Vec<Bytes> = Vec::with_capacity(request.ops.len());
