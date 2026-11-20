@@ -51,12 +51,13 @@ the readiness marker the browser tests wait on.
 - [x] single binary serving the bundled UI: Containerfile (~108 MB, verified by running it locally),
       quadlet unit, `mise run deploy` modelled on acta's (no secrets to ship), `mise run dev|test|test:e2e`
 
-## Phase 3: Mobile polish
+## Phase 3: Finalize
 
 - [ ] iOS install flow and first-run guidance
 - [ ] inline sync status next to the note stamp (the `⌘⇧S` overlay already shows it)
 - [ ] eviction recovery: token present + empty database → full re-pull from cursor 0
 - [ ] measure cold-start replay and decide whether checkpoints are needed
+- [ ] Backup mechanism
 
 ## Phase 4: Advanced, unordered
 
