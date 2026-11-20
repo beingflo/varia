@@ -1,6 +1,7 @@
 import { createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js';
 import HistoryHost from './components/History';
 import Sync from './components/Sync';
+import SyncDot from './components/SyncDot';
 import { useRepo } from './db/context';
 import { focusEditor, onCommand } from './lib/commands';
 import { flushAll } from './lib/flush';
@@ -120,6 +121,7 @@ export default function App() {
       <Show when={syncOpen()}>
         <Sync onClose={() => setSyncOpen(false)} />
       </Show>
+      <SyncDot />
     </SyncProvider>
   );
 }

@@ -144,7 +144,9 @@ overlay in `components/Sync.tsx` is testable against a fake engine.
 
 The view shows only what the engine's status says: `synced now · nothing pending`, `3 pending`,
 `sync failed — 429 rate_limited`, usage against the cap, how old the last sync is, and the enrolment
-token only. Not enrolled, the panel takes the token and the key in two fields with a filled primary
+token only. The same status is a dot in the bottom-right corner on every screen
+(`components/SyncDot.tsx`): green after a good sync, a slow pulse while one runs, a hollow grey ring
+when the last attempt failed, and nothing at all when sync is off. Not enrolled, the panel takes the token and the key in two fields with a filled primary
 button under them (`join this device`, disabled until both are pasted; Enter does the same) and,
 below a rule, a separate quiet button for `create a new account` — joining and starting fresh are
 different actions and never share a control. Signup answers with both strings on a screen that says
@@ -153,8 +155,7 @@ the key is shown once and cannot be recovered; dismissing it leaves the enrolled
 `unlink this device` sits below the token, behind a second click, and does two things: forgets the
 token and the derived key in IndexedDB, and turns the local op log back into an outbox
 (`pushed = 0`, cursor `0`, remote-dedup rows dropped). Notes are never touched, so unlinking and
-creating a new account uploads the entire local history to the new one. The inline
-status line next to the note stamp is still open (`PLAN.md` phase 3).
+creating a new account uploads the entire local history to the new one.
 
 ## PWA
 

@@ -5,7 +5,7 @@ import { useRepo } from '../db/context';
 import { onCommand, onEditorFocus } from '../lib/commands';
 import { registerFlush } from '../lib/flush';
 import { signalViewReady } from '../lib/ready';
-import { ago, pulseStamp, useTicker } from '../lib/time';
+
 
 /**
  * The editor. With no `id` this is the landing draft: nothing exists in the database until
@@ -16,11 +16,8 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
   const [noteId, setNoteId] = createSignal(props.id);
   const [body, setBody] = createSignal('');
   const [saved, setSaved] = createSignal('');
-  const [updated, setUpdated] = createSignal(0);
-  const now = useTicker();
   const [historyOpen, setHistoryOpen] = createSignal(false);
   let editor: EditorApi | undefined;
-  let stampEl: HTMLSpanElement | undefined;
 
   // Bumped on every keystroke: a load that resolves after the user started typing must not
   // overwrite what they wrote (the body it read is the older baseline, kept as `saved`).
@@ -46,7 +43,6 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
     if (!id) {
       setBody('');
       setSaved('');
-      setUpdated(0);
       requestAnimationFrame(() => {
         focusEnd();
         signalViewReady();
@@ -57,7 +53,6 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
     if (mine !== generation) return;
     setSaved(note?.body ?? '');
     if (edits === mark) setBody(note?.body ?? '');
-    setUpdated(note?.updated ?? 0);
     // Focus and signal in the same frame, so a caller waiting for "ready" never sees the old state.
     requestAnimationFrame(() => {
       if (mine !== generation) return;
@@ -111,10 +106,6 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
     await repo.saveBody(id, text);
     if (mine()) {
       setSaved(text);
-      const at = Date.now();
-      const same = updated() ? ago(updated()) === ago(at) : false;
-      setUpdated(at);
-      if (same) pulseStamp(stampEl); // "now" to "now" would otherwise look like nothing happened
     }
     if (created && mine()) {
       setNoteId(id);
@@ -155,11 +146,6 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
           editor = api;
         }}
       />
-      <Show when={updated()}>
-        <span ref={stampEl} class="stamp muted small">
-          {ago(updated(), now())}
-        </span>
-      </Show>
       <Show when={historyOpen() && noteId()}>
         <History noteId={noteId()!} onClose={() => setHistoryOpen(false)} />
       </Show>

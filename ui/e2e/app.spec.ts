@@ -107,7 +107,7 @@ test('saves on blur', async ({ page }) => {
   await page.goto('/');
   await ready(page);
   await editor(page).fill('saved by blur');
-  await page.locator('.stamp, .cm-content').last().click({ position: { x: 5, y: 5 } }); // blur the editor
+  await page.locator('.cm-content').last().click({ position: { x: 5, y: 5 } }); // blur the editor
   await openList(page);
   await expect(page.locator('.notes li', { hasText: 'saved by blur' })).toBeVisible();
 });

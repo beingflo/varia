@@ -165,5 +165,10 @@ account log comes down. Both devices end with the union, ordered by `(lamport, d
 
 When a pull lands a note whose server head is not an ancestor of the local head, both branches stay
 in the log and the note shows the head with the highest `(lamport, device)`. Nothing is merged and
-nothing is dropped. The version tree view, and the badge that accompanies it, are a later feature
-(`PLAN.md` phase 4) — the data already supports both.
+nothing is dropped, on any device: `applySnapshot` only overwrites the note when the op beats its body
+stamp, and `heads()` reports every leaf, so both sides materialise the same tree.
+
+There is no resolve action and no "seen" state. The version tree shows the fork with both heads, the
+user reads either branch in its preview and resolves it by editing — which writes the text as a new
+snapshot and leaves the other branch in the tree. Wall clocks never decide anything: only lamport and
+device id do.

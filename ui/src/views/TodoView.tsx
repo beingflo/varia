@@ -5,7 +5,6 @@ import { between } from '../db/ops';
 import { onCommand, onEditorFocus } from '../lib/commands';
 import { registerFlush } from '../lib/flush';
 import { signalViewReady } from '../lib/ready';
-import { ago, useTicker } from '../lib/time';
 
 const INDENT_REM = 1.4;
 const WARN_MS = 1200;
@@ -43,8 +42,6 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
   const [draftDepth, setDraftDepth] = createSignal(0);
   const [title, setTitle] = createSignal('');
   const [savedTitle, setSavedTitle] = createSignal('');
-  const [updated, setUpdated] = createSignal(0);
-  const now = useTicker();
   const [all, setAll] = createSignal<Item[]>([]);
   // Text typed into a row and not yet written: row id → what the input shows.
   const [edits, setEdits] = createSignal(new Map<string, string>());
@@ -93,16 +90,16 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
    * something else in the same frame (an added item, a cleared field) applies both together, so no
    * frame ever shows half of it.
    */
-  const read = async (): Promise<{ items: Item[]; updated: number } | undefined> => {
+  const read = async (): Promise<{ items: Item[] } | undefined> => {
     const id = noteId();
     if (!id) return undefined;
     const generation = ++reloadGeneration;
-    const [items, note] = await Promise.all([repo.items(id, true), repo.getNote(id)]);
+    const items = await repo.items(id, true);
     if (generation !== reloadGeneration) return undefined;
-    return { items, updated: note?.updated ?? 0 };
+    return { items };
   };
 
-  const apply = (data: { items: Item[]; updated: number }) =>
+  const apply = (data: { items: Item[] }) =>
     batch(() => {
       // The database is the truth, except for blank rows it does not know about yet: a write
       // landing while one of those is being typed into must not take it off screen.
@@ -111,7 +108,6 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
         const pending = current.filter((row) => localRows.has(row.id) && !data.items.some((next) => next.id === row.id));
         return pending.length > 0 ? [...rows, ...pending].sort((a, b) => a.ordering - b.ordering) : rows;
       });
-      setUpdated(data.updated);
     });
 
   const reload = async () => {
@@ -629,9 +625,6 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
         </div>
       </div>
 
-      <Show when={updated()}>
-        <span class="stamp muted small">{ago(updated(), now())}</span>
-      </Show>
     </main>
   );
 }
