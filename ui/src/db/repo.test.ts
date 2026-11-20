@@ -17,7 +17,7 @@ function snapshot(db: Db, noteId: string, body: string, lamport: number, opts: {
   const device = opts.device ?? 'dev-b';
   return remote(db, {
     device,
-    seq: lamport,
+    id: `op-${lamport}`,
     kind: 'note_snapshot',
     note_id: noteId,
     lamport,
@@ -29,7 +29,7 @@ function snapshot(db: Db, noteId: string, body: string, lamport: number, opts: {
 function itemOp(db: Db, noteId: string, itemId: string, fields: Record<string, unknown>, lamport: number, device = 'dev-b') {
   return remote(db, {
     device,
-    seq: lamport,
+    id: `op-${lamport}`,
     kind: 'todo_item',
     note_id: noteId,
     lamport,
@@ -240,7 +240,7 @@ describe('op log', () => {
     const ops = repo.unpushed(db);
     expect(ops.map((o) => o.kind)).toEqual(['note_meta', 'note_snapshot', 'note_meta']);
     expect(ops.map((o) => o.lamport)).toEqual([1, 2, 3]);
-    expect(ops.map((o) => o.seq)).toEqual([1, 2, 3]);
+    expect(ops).toHaveLength(3);
 
     repo.markPushed(db, ops);
     expect(repo.unpushed(db)).toEqual([]);
@@ -290,13 +290,34 @@ describe('debug reads', () => {
     expect(second.rows[0].body).toBe('one');
   });
 
-  it('shows the op log in sequence order, newest first', () => {
+  // The counter this replaced was guessable: a token holder could squat a device's next sequence
+  // number and the server's dedupe would swallow the real op. A cloned database collided too.
+  it('identifies ops by a random id, so twins with the same device id cannot collide', () => {
+    const twinA = fresh('same-device');
+    const twinB = fresh('same-device'); // a restored backup of the same profile
+    const noteA = repo.createNote(twinA, 'note');
+    const noteB = repo.createNote(twinB, 'note');
+
+    const [opA] = repo.unpushed(twinA);
+    const [opB] = repo.unpushed(twinB);
+    expect(opA.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-/);
+    expect(opA.id).not.toBe(opB.id);
+
+    // A third database applies both: neither is mistaken for the other.
+    const target = fresh('device-c');
+    expect(repo.applyRemoteOps(target, [opA, opB])).toBe(2);
+    expect(repo.listNotes(target).map((note) => note.id).sort()).toEqual([noteA, noteB].sort());
+    // ...and re-applying either is still a no-op.
+    expect(repo.applyRemoteOps(target, [opA, opB])).toBe(0);
+  });
+
+  it('shows the op log newest first', () => {
     const db = fresh();
     const id = repo.createNote(db, 'note');
     repo.saveBody(db, id, 'x');
 
     const ops = repo.debugRows(db, 'op', 0, 10).rows;
-    expect(ops.map((o) => o.seq)).toEqual([2, 1]);
+    expect(ops).toHaveLength(2);
     expect(ops[0].kind).toBe('note_snapshot');
   });
 

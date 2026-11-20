@@ -42,8 +42,8 @@ async fn signup(app: &Router, ip: &str) -> String {
 
 fn op(seq: i64, payload: &[u8]) -> Value {
     json!({
+        "id": format!("op-{seq}"),
         "device": "device-a",
-        "seq": seq,
         "kind": "note_body",
         "note_id": "note-1",
         "created": 1_700_000_000 + seq,
@@ -120,7 +120,7 @@ async fn pushes_are_ordered_and_pulled_once_per_cursor() {
     let ops = body["ops"].as_array().unwrap();
     assert_eq!(ops.len(), 2);
     assert_eq!(ops[0]["server_seq"], 1);
-    assert_eq!(ops[0]["seq"], 0);
+    assert_eq!(ops[0]["id"], "op-0");
     assert_eq!(ops[1]["server_seq"], 2);
 
     // Cursored: nothing new, and the cursor stays put.
@@ -141,6 +141,28 @@ async fn a_retried_push_is_ignored() {
     let (_, _, body) = send(&app, sync_request(&token, 0, vec![])).await;
     assert_eq!(body["ops"].as_array().unwrap().len(), 1, "the duplicate must not add a row");
     assert_eq!(body["usage_bytes"], 28);
+}
+
+#[tokio::test]
+async fn identity_is_the_op_id_and_never_the_device() {
+    let app = app();
+    let token = signup(&app, "10.0.0.1").await;
+
+    // Two ops from the same device with different ids: both stored. A counter used to be the
+    // identity, so a token holder could squat a device's next sequence number and swallow its op.
+    let (status, _, _) = send(&app, sync_request(&token, 0, vec![op(0, &payload(1)), op(1, &payload(2))])).await;
+    assert_eq!(status, StatusCode::OK);
+
+    // The same id under a different device is a duplicate too: identity is the id alone.
+    let mut copy = op(0, &payload(9));
+    copy["device"] = json!("device-b");
+    send(&app, sync_request(&token, 0, vec![copy])).await;
+
+    let (_, _, body) = send(&app, sync_request(&token, 0, vec![])).await;
+    let ops = body["ops"].as_array().unwrap();
+    assert_eq!(ops.len(), 2);
+    assert_eq!(ops[0]["id"], "op-0");
+    assert_eq!(ops[1]["id"], "op-1");
 }
 
 #[tokio::test]

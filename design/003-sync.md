@@ -11,8 +11,9 @@ as a SHA-256 hash, and used as a bearer credential on every sync call. One token
 by its devices; revocation and multiple tokens are a later feature.
 
 Server tables: `user(id, token_hash, created)`,
-`op(owner, server_seq, device, seq, kind, note_id, created, ciphertext)` with a unique
-`(owner, device, seq)` — that uniqueness is what makes a retried push harmless.
+`op(owner, server_seq, op_id, device, kind, note_id, created, ciphertext)` with a unique
+`(owner, op_id)` — that uniqueness is what makes a retried push harmless. The id is random, chosen by
+the client, so nothing can predict one and pre-empt it.
 
 There is no owner column on the client: a local database belongs to one person by definition, and
 attribution only exists once ops reach the server.
@@ -24,24 +25,26 @@ key; the same construction will produce subkeys for blob ids and anything else. 
 non-extractable, so an XSS can read what it can read today but cannot exfiltrate the key itself.
 
 `getRandomValues(32)` produces the root key; HKDF derives the AES key from it, imported
-non-extractable. The root bytes themselves are stored in IndexedDB beside the AES key, so the
-enrolment code can be shown again on a later visit — the cost of that convenience is that a script
-with same-origin access can *export* the root key, not merely use the AES key it already has. The
-alternative, showing the code exactly once at signup and never again, is recorded here because it is
-the stronger choice if a passphrase ever wraps the root.
+non-extractable. The root exists in memory only while the signup screen shows it — it is never
+written anywhere, so a script with same-origin access can use the AES key but can export neither it
+nor the root. The price is that the key is shown exactly once: losing it loses the server copy of
+every note, with no reset.
+
+Two strings, never combined:
 
 ```
-varia1.<token>.<root key, base32>
+token     64 hex characters, identifies the account on the server
+key       32 bytes as 52 base32 characters, decrypts the log
 ```
 
-Shown in the sync panel (`⌘⇧S`) on every visit, and offered as a download. A second device pastes it
-once and then pulls from cursor 0.
-Losing every device and the enrolment code loses the data: there is no reset and no server-side
-recovery.
+The panel shows both once, at signup, with a download of the pair and a warning that the key is
+unrecoverable. Afterwards it shows the token only: the key is not stored, so a second device needs
+the copy the user saved. Losing both means the account is gone; the server keeps only ciphertext,
+and there is no reset and no server-side recovery.
 
 ## Wire format
 
-An op travels as `{kind, note_id, device, seq, created, ciphertext}`. The payload is
+An op travels as `{id, device, kind, note_id, created, ciphertext}`. The payload is
 `JSON → gzip (CompressionStream / flate2) → AES-256-GCM` with a random 12-byte nonce prepended.
 `lamport` lives inside the encrypted payload; the plaintext envelope keeps only what the server needs
 to order, dedupe and cap.
@@ -56,6 +59,13 @@ POST /api/sync     {device, cursor, ops[]}     → {ops[], cursor, more, usage_b
 `/api/sync` pushes and pulls in one request. Push is best-effort per op: duplicates are ignored,
 ordering is the server's `server_seq`. Pull returns ops with `server_seq > cursor`, at most 500 ops
 or 8 MB, with `more: true` when the client should immediately request again.
+
+A token holder who is not the user can read the envelope metadata (device ids, note ids, kinds,
+timestamps, sizes) and nothing else: a forged ciphertext fails to authenticate on the client and is
+skipped. They can waste the account's cap and pull budget; they cannot delete an op — there is no
+delete endpoint — and with a random op id they cannot pre-empt one either. Signing the envelope with a
+per-device key derived from the root would close the waste as well; it is a phase 4 option, not
+something the log needs today.
 
 Errors are boring on purpose: `401` bad token, `413` op or body too large, `429` with `Retry-After`,
 `403` with `{"error": "storage_cap"}` when the account is full. A full account can always pull.
@@ -84,9 +94,9 @@ and shows the enrolment code the one time it can exist, which is also why a lost
 account. `⌘⇧S` opens the sync overlay: paste a code, or press Enter on the empty field to create an
 account and see the code for the first time.
 
-Unlinking is the one way out: it drops the account from the device and rewinds the outbox, so the
-same local history can be pushed to a different account. The old account's log stays on the server,
-unreadable without a code that device no longer holds.
+Unlinking is the one way out: it drops the token and the derived key from the device and rewinds the
+outbox, so the same local history can be pushed to a different account. The notes are never touched.
+The old account's log stays on the server, unreadable without a key that device no longer holds.
 
 ## Implementation notes
 

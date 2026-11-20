@@ -109,8 +109,9 @@ struct SyncRequest {
 
 #[derive(Deserialize)]
 struct WireOp {
+    /// Random op id from the client; the server only uses it to ignore duplicates.
+    id: String,
     device: String,
-    seq: i64,
     kind: String,
     note_id: String,
     created: i64,
@@ -130,8 +131,8 @@ struct SyncResponse {
 #[derive(Serialize)]
 struct PulledOp {
     server_seq: i64,
+    id: String,
     device: String,
-    seq: i64,
     kind: String,
     note_id: String,
     created: i64,
@@ -152,10 +153,11 @@ async fn sync(
     let mut incoming = Vec::with_capacity(request.ops.len());
     let mut payloads: Vec<Bytes> = Vec::with_capacity(request.ops.len());
     for op in &request.ops {
+        check_label("id", &op.id, 64)?;
         check_label("device", &op.device, 64)?;
         check_label("note_id", &op.note_id, 64)?;
         check_label("kind", &op.kind, 32)?;
-        if op.seq < 0 || op.created <= 0 {
+        if op.created <= 0 {
             return Err(ApiError::new(StatusCode::BAD_REQUEST, "bad_op"));
         }
         let payload = B64.decode(&op.ciphertext).map_err(|_| ApiError::new(StatusCode::BAD_REQUEST, "bad_op"))?;
@@ -167,8 +169,8 @@ async fn sync(
     }
     for (op, payload) in request.ops.iter().zip(&payloads) {
         incoming.push(NewOp {
+            id: &op.id,
             device: &op.device,
-            seq: op.seq,
             kind: &op.kind,
             note_id: &op.note_id,
             created: op.created,
@@ -194,8 +196,8 @@ async fn sync(
             .into_iter()
             .map(|op| PulledOp {
                 server_seq: op.server_seq,
+                id: op.id,
                 device: op.device,
-                seq: op.seq,
                 kind: op.kind,
                 note_id: op.note_id,
                 created: op.created,

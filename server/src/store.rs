@@ -7,8 +7,9 @@ use sha2::{Digest, Sha256};
 
 /// An op on its way in. The server keeps `ciphertext` opaque and never touches the payload.
 pub struct NewOp<'a> {
+    /// Random, chosen by the client: the dedupe key, so a retried push is harmless.
+    pub id: &'a str,
     pub device: &'a str,
-    pub seq: i64,
     pub kind: &'a str,
     pub note_id: &'a str,
     pub created: i64,
@@ -18,8 +19,8 @@ pub struct NewOp<'a> {
 /// An op on its way out, with the sequence the server assigned to it.
 pub struct StoredOp {
     pub server_seq: i64,
+    pub id: String,
     pub device: String,
-    pub seq: i64,
     pub kind: String,
     pub note_id: String,
     pub created: i64,
@@ -56,14 +57,14 @@ impl Store {
              CREATE TABLE IF NOT EXISTS op(
                  owner TEXT NOT NULL,
                  server_seq INTEGER NOT NULL,
+                 op_id TEXT NOT NULL,
                  device TEXT NOT NULL,
-                 seq INTEGER NOT NULL,
                  kind TEXT NOT NULL,
                  note_id TEXT NOT NULL,
                  created INTEGER NOT NULL,
                  ciphertext BLOB NOT NULL,
                  PRIMARY KEY (owner, server_seq),
-                 UNIQUE (owner, device, seq)
+                 UNIQUE (owner, op_id)
              );",
         )?;
         Ok(Self { conn: Mutex::new(conn) })
@@ -108,10 +109,10 @@ impl Store {
                 break;
             }
             let inserted = tx.execute(
-                "INSERT OR IGNORE INTO op(owner, server_seq, device, seq, kind, note_id, created, ciphertext)
+                "INSERT OR IGNORE INTO op(owner, server_seq, op_id, device, kind, note_id, created, ciphertext)
                  VALUES (?1, (SELECT COALESCE(MAX(server_seq), 0) + 1 FROM op WHERE owner = ?1),
                          ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![owner, op.device, op.seq, op.kind, op.note_id, op.created, op.ciphertext],
+                params![owner, op.id, op.device, op.kind, op.note_id, op.created, op.ciphertext],
             )?;
             if inserted == 1 {
                 usage += op.ciphertext.len() as i64;
@@ -127,15 +128,15 @@ impl Store {
     pub fn pull(&self, owner: &str, cursor: i64, limit: usize) -> rusqlite::Result<Vec<StoredOp>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT server_seq, device, seq, kind, note_id, created, ciphertext
+            "SELECT server_seq, op_id, device, kind, note_id, created, ciphertext
              FROM op WHERE owner = ?1 AND server_seq > ?2
              ORDER BY server_seq LIMIT ?3",
         )?;
         let rows = stmt.query_map(params![owner, cursor, limit as i64], |row| {
             Ok(StoredOp {
                 server_seq: row.get(0)?,
-                device: row.get(1)?,
-                seq: row.get(2)?,
+                id: row.get(1)?,
+                device: row.get(2)?,
                 kind: row.get(3)?,
                 note_id: row.get(4)?,
                 created: row.get(5)?,

@@ -14,7 +14,7 @@ function fakeServer() {
   const transport: Transport = async (_token, { cursor, ops }) => {
     let written = 0;
     for (const op of ops) {
-      const key = `${op.device}:${op.seq}`;
+      const key = op.id;
       if (seen.has(key)) continue;
       seen.add(key);
       stored.push({ ...op, server_seq: stored.length + 1 });
@@ -145,12 +145,12 @@ describe('sync', () => {
     const server = fakeServer();
     const stranger = await opKey(newRootKey());
     server.stored.push({
+      id: 'op-stranger',
       device: 'device-x',
-      seq: 1,
       kind: 'note_meta',
       note_id: 'elsewhere',
       created: 1,
-      ciphertext: await seal(stranger, { device: 'device-x', seq: 1, kind: 'note_meta', note_id: 'elsewhere', created: 1, lamport: 1, payload: {} }),
+      ciphertext: await seal(stranger, { id: 'op-stranger', device: 'device-x', kind: 'note_meta', note_id: 'elsewhere', created: 1, lamport: 1, payload: {} }),
       server_seq: 1,
     });
     await writeNote(sender, 'readable whatever the key says');

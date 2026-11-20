@@ -20,8 +20,8 @@ const settle = () => new Promise((r) => setTimeout(r, 20));
 
 const fakeOps = (count: number) =>
   Array.from({ length: count }, (_, seq) => ({
+    id: `op-${seq}`,
     device: 'device-x',
-    seq,
     kind: 'note_snapshot' as const,
     note_id: 'note-1',
     lamport: seq + 1,
@@ -64,7 +64,7 @@ describe('worker client', () => {
     const seen = vi.fn();
     repo.onChange(seen);
 
-    await repo.markPushed([{ device: 'device-x', seq: 1 }]);
+    await repo.markPushed([{ id: 'op-1' }]);
     await repo.setSyncCursor(7);
     await settle();
 

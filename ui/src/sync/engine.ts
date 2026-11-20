@@ -3,7 +3,7 @@
 import { createSignal } from 'solid-js';
 import type { Repo } from '../db/api';
 import { flushAll } from '../lib/flush';
-import { enrolmentCode, newRootKey, opKey, parseEnrolmentCode } from './crypto';
+import { formatRootKey, newRootKey, opKey, parseRootKey } from './crypto';
 import { syncNow } from './client';
 import { httpTransport, SyncError } from './http';
 import type { Account, AccountStore } from './keystore';
@@ -35,8 +35,8 @@ export function createEngine(options: {
   const transport = options.transport ?? httpTransport(base);
   const [status, setStatus] = createSignal<SyncStatus>({ state: 'off', pending: 0, last: 0, usage: 0, cap: 0, error: '' });
   const [enrolled, setEnrolled] = createSignal(false);
-  /** The enrolment code, recomputed from the stored root. Empty when the root is unknown. */
-  const [enrolment, setEnrolment] = createSignal('');
+  /** The backend token, for the panel to show. The key is never held after signup. */
+  const [accountToken, setAccountToken] = createSignal('');
 
   let account: Account | undefined;
   let running = false;
@@ -95,15 +95,15 @@ export function createEngine(options: {
   }
 
   async function remember(token: string, root: Uint8Array): Promise<void> {
-    account = { token, key: await opKey(root), root };
+    account = { token, key: await opKey(root) };
     await store.save(account);
-    setEnrolment(enrolmentCode(token, root));
+    setAccountToken(token);
     setEnrolled(true);
     attach();
   }
 
-  /** Creates an account. The token is in the panel from now on, not only in the answer. */
-  async function signup(): Promise<string> {
+  /** Creates an account and returns the key once: it is not stored, by design. */
+  async function signup(): Promise<{ token: string; key: string }> {
     const response = await fetch(`${base}/api/signup`, { method: 'POST', body: '{}' });
     if (response.status === 404) throw new Error('no sync service at this address (404)');
     if (response.status === 429) {
@@ -115,13 +115,12 @@ export function createEngine(options: {
     const root = newRootKey();
     await remember(token, root);
     await run('after signup');
-    return enrolment();
+    return { token, key: formatRootKey(root) };
   }
 
   /** Joins an existing account from its code. The first pull starts at cursor 0: the whole log. */
-  async function enrol(code: string): Promise<void> {
-    const { token, root } = parseEnrolmentCode(code);
-    await remember(token, root);
+  async function enrol(token: string, key: string): Promise<void> {
+    await remember(token.trim(), parseRootKey(key));
     await run('after enrolment');
   }
 
@@ -133,7 +132,7 @@ export function createEngine(options: {
     await store.clear();
     await repo.resetSync();
     account = undefined;
-    setEnrolment('');
+    setAccountToken('');
     setEnrolled(false);
     stop();
     patch({ state: 'off', last: 0, pending: 0, error: '' });
@@ -150,11 +149,9 @@ export function createEngine(options: {
         console.warn('sync storage unavailable', err); // private mode, disabled storage
         return;
       }
-      // A prototype does not migrate: an account stored before the root was kept is simply ignored.
-      if (account && !account.root) account = undefined;
       setEnrolled(Boolean(account));
       if (!account) return;
-      setEnrolment(enrolmentCode(account.token, account.root));
+      setAccountToken(account.token);
       attach();
       await run('on start');
     })();
@@ -188,5 +185,5 @@ export function createEngine(options: {
     listeners.splice(0).forEach((off) => off());
   }
 
-  return { status, enrolled, enrolment, start, stop, run, signup, enrol, unlink, refreshPending };
+  return { status, enrolled, token: accountToken, start, stop, run, signup, enrol, unlink, refreshPending };
 }

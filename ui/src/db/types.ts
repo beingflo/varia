@@ -12,7 +12,8 @@ export type OpKind = 'note_meta' | 'note_snapshot' | 'todo_item';
 
 export interface Op {
   device: string;
-  seq: number;
+  /** Random per-op id: identity for dedupe, never a counter (guessing one must be infeasible). */
+  id: string;
   kind: OpKind;
   note_id: string;
   lamport: number;

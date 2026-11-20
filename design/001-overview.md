@@ -19,8 +19,9 @@ Local use requires no account, no network and no server.
 - **Fine-grained history, kept forever.** Debounced whole-body snapshots for notes (parented, so the
   history of a note is a tree), one op per checklist item change for todos. Nothing is pruned.
 - **Encrypted sync.** Ops are compressed, then AES-GCM encrypted on the client with a key the server
-  never sees, and pushed to a Rust service that stores only ciphertext plus an opaque envelope. A
-  second device is enrolled by pasting one string.
+  never sees, and pushed to a Rust service that stores only ciphertext plus an opaque envelope. The
+  account is two strings — a server token and a key that decrypts the log — and a second device is
+  enrolled by pasting both.
 - **Search is client-side**, because the server cannot read the notes.
 - **Targets**: installed PWA on iOS/iPadOS, tabs on current Firefox and Chromium.
 

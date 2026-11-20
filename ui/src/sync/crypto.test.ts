@@ -7,11 +7,11 @@ import {
   base32Encode,
   base64ToBytes,
   bytesToBase64,
-  enrolmentCode,
+  formatRootKey,
   newRootKey,
   openSealed,
   opKey,
-  parseEnrolmentCode,
+  parseRootKey,
   seal,
 } from './crypto';
 
@@ -45,22 +45,19 @@ describe('envelope', () => {
   });
 });
 
-describe('enrolment code', () => {
-  it('carries the token and the root key in one readable string', () => {
+describe('root key text', () => {
+  it('round-trips through the 52 base32 characters a user copies', () => {
     const root = newRootKey();
-    const code = enrolmentCode('0123456789abcdef', root);
-    expect(code.startsWith('varia1.0123456789abcdef.')).toBe(true);
-
-    const parsed = parseEnrolmentCode(code);
-    expect(parsed.token).toBe('0123456789abcdef');
-    expect([...parsed.root]).toEqual([...root]);
+    const text = formatRootKey(root);
+    expect(text).toHaveLength(52);
+    expect([...parseRootKey(text)]).toEqual([...root]);
+    expect([...parseRootKey(text.toLowerCase())]).toEqual([...root]); // dictation, lower case
   });
 
-  it('rejects anything else, including a code with the wrong key length', () => {
-    expect(() => parseEnrolmentCode('nonsense')).toThrow();
-    expect(() => parseEnrolmentCode('varia2.token.key')).toThrow();
-    expect(() => parseEnrolmentCode(`varia1.token.${base32Encode(new Uint8Array(8))}`)).toThrow();
-    expect(() => parseEnrolmentCode('varia1..')).toThrow();
+  it('refuses anything that is not a 32-byte key', () => {
+    expect(() => parseRootKey('')).toThrow();
+    expect(() => parseRootKey(base32Encode(new Uint8Array(8)))).toThrow();
+    expect(() => parseRootKey('nonsense!')).toThrow();
   });
 });
 

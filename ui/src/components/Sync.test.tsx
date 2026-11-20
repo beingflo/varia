@@ -5,6 +5,9 @@ import { SyncProvider } from '../sync/context';
 import type { Engine, SyncStatus } from '../sync/engine';
 import Sync from './Sync';
 
+const TOKEN = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+const KEY = 'A'.repeat(52);
+
 /** A stand-in for the real engine: the view is what is under test here. */
 function fakeEngine(overrides: Partial<Engine> = {}, initial: Partial<SyncStatus> = {}) {
   const [status, setStatus] = createSignal<SyncStatus>({
@@ -17,31 +20,32 @@ function fakeEngine(overrides: Partial<Engine> = {}, initial: Partial<SyncStatus
     ...initial,
   });
   const [enrolled, setEnrolled] = createSignal(false);
-  const [enrolment, setEnrolment] = createSignal('');
+  const [token, setToken] = createSignal('');
   const engine = {
     status,
     enrolled,
-    enrolment,
+    token,
     start: vi.fn(),
     stop: vi.fn(),
     run: vi.fn(async () => setStatus({ ...status(), state: 'idle', last: Date.now() })),
     signup: vi.fn(async () => {
-      setEnrolment(`varia1.tok.${'A'.repeat(52)}`);
+      setToken(TOKEN);
       setEnrolled(true);
-      return enrolment();
+      return { token: TOKEN, key: KEY };
     }),
-    enrol: vi.fn(async () => {
+    enrol: vi.fn(async (given: string) => {
+      setToken(given);
       setEnrolled(true);
       setStatus({ ...status(), state: 'idle', last: Date.now() });
     }),
-    refreshPending: vi.fn(),
     unlink: vi.fn(async () => {
       setEnrolled(false);
-      setEnrolment('');
+      setToken('');
     }),
+    refreshPending: vi.fn(),
     ...overrides,
   } as unknown as Engine;
-  return { engine, setStatus, setEnrolled, setEnrolment };
+  return { engine, setStatus, setEnrolled, setToken };
 }
 
 const open = (engine: Engine) => render(() => <SyncProvider engine={engine}><Sync onClose={() => {}} /></SyncProvider>);
@@ -50,87 +54,65 @@ const joinButton = () => screen.getByRole('button', { name: 'join this device' }
 const createButton = () => screen.getByRole('button', { name: 'create a new account' });
 
 describe('sync overlay', () => {
-  it('keeps the join button disabled until a code is entered, then enrols on Enter', async () => {
+  it('keeps join disabled until both secrets are pasted, then enrols', async () => {
     const { engine } = fakeEngine();
     open(engine);
 
     expect(joinButton()).toHaveProperty('disabled', true);
-    const input = screen.getByLabelText('enrolment code');
-    fireEvent.input(input, { target: { value: 'varia1.abc.DEF' } });
+    fireEvent.input(screen.getByLabelText('account token'), { target: { value: TOKEN } });
+    await waitFor(() => expect(joinButton()).toHaveProperty('disabled', true)); // key still missing
+
+    const key = screen.getByLabelText('account key');
+    fireEvent.input(key, { target: { value: KEY } });
     await waitFor(() => expect(joinButton()).toHaveProperty('disabled', false));
-    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.keyDown(key, { key: 'Enter' });
 
-    await waitFor(() => expect(engine.enrol).toHaveBeenCalledWith('varia1.abc.DEF'));
+    await waitFor(() => expect(engine.enrol).toHaveBeenCalledWith(TOKEN, KEY));
     expect(engine.signup).not.toHaveBeenCalled();
   });
 
-  it('enrols a pasted code from the primary button', async () => {
+  it('shows token and key separately after signup, and never the key again', async () => {
     const { engine } = fakeEngine();
     open(engine);
 
-    fireEvent.input(screen.getByLabelText('enrolment code'), { target: { value: 'varia1.abc.XYZ' } });
-    fireEvent.click(joinButton());
-
-    await waitFor(() => expect(engine.enrol).toHaveBeenCalledWith('varia1.abc.XYZ'));
-    expect(engine.signup).not.toHaveBeenCalled();
-  });
-
-  it('creates an account from its own button, whatever is in the field', async () => {
-    const { engine } = fakeEngine();
-    open(engine);
-
-    fireEvent.input(screen.getByLabelText('enrolment code'), { target: { value: 'half typed' } });
     fireEvent.click(createButton());
-
     await waitFor(() => expect(engine.signup).toHaveBeenCalledTimes(1));
-    expect(engine.enrol).not.toHaveBeenCalled();
+
+    expect(await screen.findByText(TOKEN)).toBeTruthy();
+    expect(screen.getByText(KEY)).toBeTruthy();
+    expect(screen.getByText(/only place the key will ever be shown/)).toBeTruthy();
+    expect(screen.getByText(/Losing it loses every note/)).toBeTruthy();
+    expect(screen.getByRole('link').getAttribute('href')).toContain(encodeURIComponent(KEY));
+
+    // Dismissing the key view leaves the enrolled view, which shows the token only.
+    fireEvent.click(screen.getByRole('button', { name: 'I have saved the key' }));
+    await waitFor(() => expect(screen.queryByText(KEY)).toBeNull());
+    expect(screen.getByText(TOKEN)).toBeTruthy();
   });
 
-  it('keeps the enrolment code on screen instead of showing it once', async () => {
-    const { engine } = fakeEngine();
-    open(engine);
-
-    fireEvent.click(createButton());
-    const code = await screen.findByText(/^varia1\.tok\./);
-    expect(code.textContent).toBe(`varia1.tok.${'A'.repeat(52)}`);
-    expect(screen.getByRole('link').getAttribute('href')).toContain(encodeURIComponent(code.textContent!.trim()));
-  });
-
-  it('shows the code again on a later visit, from the stored root', async () => {
-    const { engine, setEnrolled, setEnrolment } = fakeEngine();
+  it('returns to the form after unlinking, in two steps', async () => {
+    const { engine, setEnrolled, setToken } = fakeEngine();
     setEnrolled(true);
-    setEnrolment(`varia1.tok.${'B'.repeat(52)}`);
+    setToken(TOKEN);
     open(engine);
 
-    expect(await screen.findByText(`varia1.tok.${'B'.repeat(52)}`)).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: 'unlink this device' }));
+    expect(engine.unlink).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'click again to unlink' }));
+
+    await waitFor(() => expect(engine.unlink).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole('button', { name: 'join this device' })).toBeTruthy();
   });
 
-  it('shows the state of the last sync and syncs on Enter', async () => {
+  it('reports the last sync and syncs again on Enter', async () => {
     const { engine, setEnrolled } = fakeEngine({}, { state: 'idle', last: Date.now(), pending: 3 });
     setEnrolled(true);
     open(engine);
 
-    await waitFor(() => expect(engine.run).toHaveBeenCalled()); // opening the panel syncs
+    await waitFor(() => expect(engine.run).toHaveBeenCalled());
     expect(await screen.findByText(/synced now · 3 pending/)).toBeTruthy();
-
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(engine.run).toHaveBeenCalledTimes(2));
-  });
-
-  it('unlinks in two steps, so the only copy of the root is not lost by a stray click', async () => {
-    const { engine, setEnrolled } = fakeEngine();
-    setEnrolled(true);
-    open(engine);
-
-    const button = await screen.findByRole('button', { name: 'unlink this device' });
-    fireEvent.click(button);
-    expect(engine.unlink).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'click again to unlink' })).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: 'click again to unlink' }));
-    await waitFor(() => expect(engine.unlink).toHaveBeenCalledTimes(1));
-    // Back to the not-enrolled form, with the notes untouched.
-    expect(await screen.findByRole('button', { name: 'join this device' })).toBeTruthy();
   });
 
   it('reports a failed sync with its reason', async () => {

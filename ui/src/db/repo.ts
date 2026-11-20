@@ -23,7 +23,6 @@ export function openDb(db: Db, device?: string): string {
   const id = device ?? crypto.randomUUID();
   setMetaValue(db, 'device', id);
   setMetaValue(db, 'lamport', '0');
-  setMetaValue(db, 'seq', '0');
   return id;
 }
 
@@ -59,15 +58,13 @@ function tx<T>(db: Db, fn: () => T): T {
 function appendOp(db: Db, kind: OpKind, noteId: string, payload: Record<string, unknown>): Op {
   const device = deviceId(db);
   const lamport = Number(meta(db, 'lamport') ?? '0') + 1;
-  const seq = Number(meta(db, 'seq') ?? '0') + 1;
   const created = Date.now();
   setMetaValue(db, 'lamport', String(lamport));
-  setMetaValue(db, 'seq', String(seq));
 
-  const op: Op = { device, seq, kind, note_id: noteId, lamport, created, payload };
-  db.run('INSERT INTO op(device, seq, kind, note_id, payload, lamport, created, pushed) VALUES(?,?,?,?,?,?,?,0)', [
+  const op: Op = { id: crypto.randomUUID(), device, kind, note_id: noteId, lamport, created, payload };
+  db.run('INSERT INTO op(id, device, kind, note_id, payload, lamport, created, pushed) VALUES(?,?,?,?,?,?,?,0)', [
+    op.id,
     device,
-    seq,
     kind,
     noteId,
     JSON.stringify(payload),
@@ -91,13 +88,13 @@ export function applyRemoteOps(db: Db, ops: Op[]): number {
   return tx(db, () => ops.reduce((applied, op) => (applyRemoteOp(db, op) ? applied + 1 : applied), 0));
 }
 
-/** Apply an op that came from elsewhere; idempotent by `(device, seq)`. */
+/** Apply an op that came from elsewhere; idempotent by op id. */
 export function applyRemoteOp(db: Db, op: Op): boolean {
   // The local clock must pass the remote one, or the next local write loses the tie-break.
   if (op.lamport > Number(meta(db, 'lamport') ?? '0')) setMetaValue(db, 'lamport', String(op.lamport));
-  const seen = db.get('SELECT 1 FROM op_seen WHERE device = ? AND seq = ?', [op.device, op.seq]);
+  const seen = db.get('SELECT 1 FROM op_seen WHERE id = ?', [op.id]);
   if (seen) return false;
-  db.run('INSERT INTO op_seen(device, seq) VALUES(?, ?)', [op.device, op.seq]);
+  db.run('INSERT INTO op_seen(id) VALUES(?)', [op.id]);
   applyOp(db, op);
   return true;
 }
@@ -169,9 +166,9 @@ function applyTodoOp(db: Db, op: Op & { payload: ItemChange }): void {
   // Item changes are changes to the list: recency and the "edited" label must follow them.
   db.run('UPDATE note SET updated = ? WHERE id = ? AND updated < ?', [op.created, change.note_id, op.created]);
   db.run(
-    `INSERT OR IGNORE INTO todo_item_op(device, seq, item_id, note_id, fields, lamport, created)
+    `INSERT OR IGNORE INTO todo_item_op(id, device, item_id, note_id, fields, lamport, created)
      VALUES(?,?,?,?,?,?,?)`,
-    [op.device, op.seq, change.item_id, change.note_id, JSON.stringify(change.fields), op.lamport, op.created],
+    [op.id, op.device, change.item_id, change.note_id, JSON.stringify(change.fields), op.lamport, op.created],
   );
 
   const row = db.get<Item>('SELECT * FROM todo_item WHERE id = ?', [change.item_id]);
@@ -416,8 +413,8 @@ export function tagsOf(db: Db, noteId: string): string[] {
 
 export function unpushed(db: Db, limit = 500): Op[] {
   return db
-    .all<{ device: string; seq: number; kind: OpKind; note_id: string; payload: string; lamport: number; created: number }>(
-      'SELECT * FROM op WHERE pushed = 0 ORDER BY device, seq LIMIT ?',
+    .all<{ id: string; device: string; kind: OpKind; note_id: string; payload: string; lamport: number; created: number }>(
+      'SELECT * FROM op WHERE pushed = 0 ORDER BY created, rowid LIMIT ?',
       [limit],
     )
     .map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
@@ -435,7 +432,7 @@ const DEBUG_ORDER: Record<string, string> = {
   version: 'lamport DESC, device DESC',
   todo_item: 'note_id, ordering',
   todo_item_op: 'lamport DESC, device DESC',
-  op: 'device, seq DESC',
+  op: 'created DESC, rowid DESC',
 };
 
 export type DebugTable = { name: string; count: number };
@@ -482,8 +479,8 @@ export function setSyncCursor(db: Db, cursor: number): void {
   setMetaValue(db, 'cursor', String(cursor));
 }
 
-export function markPushed(db: Db, ops: { device: string; seq: number }[]): void {
+export function markPushed(db: Db, ops: { id: string }[]): void {
   tx(db, () => {
-    for (const op of ops) db.run('UPDATE op SET pushed = 1 WHERE device = ? AND seq = ?', [op.device, op.seq]);
+    for (const op of ops) db.run('UPDATE op SET pushed = 1 WHERE id = ?', [op.id]);
   });
 }

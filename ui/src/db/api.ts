@@ -26,7 +26,7 @@ export interface Handlers {
   tags(): string[];
   tagsOf(noteId: string): string[];
   unpushed(): Op[];
-  markPushed(ops: { device: string; seq: number }[]): void;
+  markPushed(ops: { id: string }[]): void;
   applyRemote(ops: Op[]): number;
   syncCursor(): number;
   setSyncCursor(cursor: number): void;

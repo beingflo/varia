@@ -5,8 +5,9 @@ import type { Op } from '../db/types';
 import { openSealed, seal } from './crypto';
 
 export type WireOp = {
+  /** Random op id: the server's dedupe key, so a retried push is harmless. */
+  id: string;
   device: string;
-  seq: number;
   kind: string;
   note_id: string;
   created: number;
@@ -46,8 +47,8 @@ export async function syncNow(options: { repo: Repo; key: CryptoKey; token: stri
     const outbox = await repo.unpushed();
     const ops: WireOp[] = await Promise.all(
       outbox.map(async (op) => ({
+        id: op.id,
         device: op.device,
-        seq: op.seq,
         kind: op.kind,
         note_id: op.note_id,
         created: op.created,
@@ -60,7 +61,7 @@ export async function syncNow(options: { repo: Repo; key: CryptoKey; token: stri
     // Only after the server accepted them: a failed push must leave the outbox intact. Duplicates
     // are ignored server-side, so a second attempt is harmless.
     if (ops.length > 0) {
-      await repo.markPushed(outbox.map(({ device, seq }) => ({ device, seq })));
+      await repo.markPushed(outbox.map(({ id }) => ({ id })));
       state.pushed += ops.length;
     }
 

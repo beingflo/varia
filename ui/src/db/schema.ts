@@ -41,14 +41,13 @@ CREATE TABLE todo_item(
 CREATE INDEX todo_item_note ON todo_item(note_id, deleted, ordering);
 
 CREATE TABLE todo_item_op(
+  id TEXT PRIMARY KEY,
   device TEXT NOT NULL,
-  seq INTEGER NOT NULL,
   item_id TEXT NOT NULL,
   note_id TEXT NOT NULL,
   fields TEXT NOT NULL,
   lamport INTEGER NOT NULL,
-  created INTEGER NOT NULL,
-  PRIMARY KEY (device, seq)
+  created INTEGER NOT NULL
 );
 CREATE INDEX todo_item_op_item ON todo_item_op(item_id, lamport DESC);
 
@@ -61,21 +60,20 @@ CREATE TABLE note_tag(
 
 -- Append-only log: the source of truth, and the push outbox.
 CREATE TABLE op(
+  id TEXT PRIMARY KEY,
   device TEXT NOT NULL,
-  seq INTEGER NOT NULL,
   kind TEXT NOT NULL,
   note_id TEXT NOT NULL,
   payload TEXT NOT NULL,
   lamport INTEGER NOT NULL,
   created INTEGER NOT NULL,
-  pushed INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (device, seq)
+  pushed INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX op_note ON op(note_id, lamport, device);
-CREATE INDEX op_unpushed ON op(pushed, device, seq);
+CREATE INDEX op_unpushed ON op(pushed, created);
 
 -- Pulled ops already applied.
-CREATE TABLE op_seen(device TEXT NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY (device, seq));
+CREATE TABLE op_seen(id TEXT PRIMARY KEY);
 
 CREATE TABLE sync_state(
   device TEXT PRIMARY KEY,

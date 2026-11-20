@@ -19,8 +19,8 @@ One SQLite file in WAL mode on a volume:
 
 ```
 user(id, token_hash, created)
-op(owner, server_seq INTEGER PK, device, seq, kind, note_id, created, ciphertext BLOB,
-   UNIQUE(owner, device, seq))
+op(owner, server_seq INTEGER PK, op_id, device, kind, note_id, created, ciphertext BLOB,
+   UNIQUE(owner, op_id))
 ```
 
 `server_seq` is a per-owner monotonic counter assigned on insert; pulling is `WHERE owner = ? AND
@@ -108,9 +108,9 @@ Small deviations worth knowing, all in `server/`:
   wrote, so a client never re-receives what it just sent, even at cursor 0.
 - **The signup rate limit is keyed on `X-Forwarded-For`.** The container publishes on loopback and
   Caddy sets the header, so nothing off-host can forge it; tests set it directly.
-- **Envelope checks before anything is stored**: labels non-empty, printable and bounded, `seq >= 0`,
-  `created > 0`, ciphertext 28 bytes to 4 MiB (nonce plus tag is the floor). A rejected request
-  writes nothing.
+- **Envelope checks before anything is stored**: labels (`id`, `device`, `note_id`, `kind`) non-empty,
+  printable and bounded, `created > 0`, ciphertext 28 bytes to 4 MiB (nonce plus tag is the floor).
+  A rejected request writes nothing.
 - **Partial pushes are allowed up to the cap.** The ops that fit are stored, the request answers
   `403 storage_cap`, and the client keeps the rest pending.
 

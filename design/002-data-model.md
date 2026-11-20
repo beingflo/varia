@@ -5,7 +5,9 @@ the server stores the same log encrypted and without a schema of its own (`003-s
 
 ## Ops
 
-An op is one immutable change, identified by `(device, seq)` — the device's own monotonic counter.
+An op is one immutable change, identified by a random 128-bit `id` the client picks when it appends.
+Not a counter: a counter is guessable (a stolen token could squat a device's next number and have the
+server dedupe swallow the real op) and two copies of one database would reissue the same numbers.
 The server adds a per-owner `server_seq` used only as a pull cursor.
 
 | kind            | payload                                              |
@@ -32,8 +34,8 @@ Ties break on device id. It is the only ordering authority; wall clocks are for 
 Log (source of truth, doubles as the push outbox):
 
 ```
-op(device, seq, kind, note_id, payload, created, pushed)   -- PK(device, seq)
-op_seen(device, seq)              -- idempotency on pull
+op(id, device, kind, note_id, payload, created, pushed)    -- PK(id)
+op_seen(id)                      -- idempotency on pull
 sync_state(device, server_cursor, last_sync_at)
 ```
 

@@ -42,19 +42,17 @@ export async function openSealed(key: CryptoKey, payload: string): Promise<unkno
   return JSON.parse(new TextDecoder().decode(await gunzip(new Uint8Array(plain))));
 }
 
-// ---------------------------------------------------------------- enrolment code
+// ---------------------------------------------------------------- the two secrets
 
-/** `varia1.<token>.<root key, base32>`: the one string a second device needs. */
-export function enrolmentCode(token: string, root: Uint8Array): string {
-  return `varia1.${token}.${base32Encode(root)}`;
+/** The key as the user copies it: 52 base32 characters, no padding, easy to read out loud. */
+export function formatRootKey(root: Uint8Array): string {
+  return base32Encode(root);
 }
 
-export function parseEnrolmentCode(code: string): { token: string; root: Uint8Array } {
-  const [prefix, token, root] = code.trim().split('.');
-  if (prefix !== 'varia1' || !token || !root) throw new Error('not a varia enrolment code');
-  const bytes = base32Decode(root);
-  if (bytes.length !== 32) throw new Error('enrolment code is damaged');
-  return { token, root: bytes };
+export function parseRootKey(text: string): Uint8Array {
+  const bytes = base32Decode(text);
+  if (bytes.length !== 32) throw new Error('the key must be 32 bytes of base32');
+  return bytes;
 }
 
 // ---------------------------------------------------------------- helpers
