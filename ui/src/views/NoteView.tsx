@@ -1,11 +1,13 @@
-import { createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from 'solid-js';
 import History from '../components/History';
 import Editor, { type EditorApi } from '../editor/Editor';
 import { useRepo } from '../db/context';
+import type { VersionHead, VersionMeta } from '../db/types';
 import { onCommand, onEditorFocus } from '../lib/commands';
 import { registerFlush } from '../lib/flush';
 import { signalViewReady } from '../lib/ready';
 import { ago, pulseStamp, useTicker } from '../lib/time';
+import { parseAcknowledged, shortId, unacknowledgedHeads } from '../lib/versions';
 
 /**
  * The editor. With no `id` this is the landing draft: nothing exists in the database until
@@ -19,6 +21,13 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
   const [updated, setUpdated] = createSignal(0);
   const now = useTicker();
   const [historyOpen, setHistoryOpen] = createSignal(false);
+  // A version opened from history: the editor shows its text, but nothing is written until the
+  // user edits, and that first save branches from it instead of continuing from the head.
+  const [checkedOut, setCheckedOut] = createSignal<VersionMeta | null>(null);
+  let checkout: VersionMeta | undefined;
+  const [heads, setHeads] = createSignal<VersionHead[]>([]);
+  const [acknowledged, setAcknowledged] = createSignal<string[]>([]);
+  const diverged = createMemo(() => unacknowledgedHeads(heads(), acknowledged()));
   let editor: EditorApi | undefined;
   let stampEl: HTMLSpanElement | undefined;
 
@@ -34,11 +43,27 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
   // Caret at the end and the page at the top; the editor itself grows with its content.
   const focusEnd = () => editor?.focusEnd();
 
+  // Branch bookkeeping: what the note's heads are, and which ones the user has already seen.
+  // Separate from `load`, so a pull that brings a competing head updates the banner without
+  // touching the document that is being typed into.
+  const refreshHeads = async () => {
+    const id = noteId();
+    if (!id) {
+      setHeads([]);
+      setAcknowledged([]);
+      return;
+    }
+    setHeads(await repo.heads(id));
+    setAcknowledged(parseAcknowledged(await repo.getNote(id)));
+  };
+
   const load = async (id: string | undefined) => {
     const mine = ++generation;
     const mark = edits;
     setNoteId(id);
     setHistoryOpen(false);
+    checkout = undefined;
+    setCheckedOut(null);
     if (id && id === ownNote) {
       ownNote = undefined;
       return;
@@ -58,6 +83,7 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
     setSaved(note?.body ?? '');
     if (edits === mark) setBody(note?.body ?? '');
     setUpdated(note?.updated ?? 0);
+    void refreshHeads();
     // Focus and signal in the same frame, so a caller waiting for "ready" never sees the old state.
     requestAnimationFrame(() => {
       if (mine !== generation) return;
@@ -82,14 +108,21 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
       // What was on screen at capture time. A save requested before the note finished loading
       // then cannot be mistaken for an edit down to an empty document.
       baseline: saved(),
+      parent: checkout,
       gen: generation,
     };
     queue = queue.then(() => save(snapshot)).catch((err) => console.error('save failed', err));
     return queue;
   };
 
-  const save = async (snapshot: { text: string; startId: string | undefined; baseline: string; gen: number }) => {
-    const { text, startId, baseline, gen } = snapshot;
+  const save = async (snapshot: {
+    text: string;
+    startId: string | undefined;
+    baseline: string;
+    parent: VersionMeta | undefined;
+    gen: number;
+  }) => {
+    const { text, startId, baseline, parent, gen } = snapshot;
     // A draft is only materialised once it has content; an unchanged body is not written again.
     if (!startId && !text.trim()) return;
     if (text === baseline) return;
@@ -99,9 +132,15 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
     const id = startId ?? reused ?? (await repo.createNote('note'));
     if (created) draftNote = { id, gen };
 
-    await repo.saveBody(id, text);
+    await repo.saveBody(id, text, parent?.id);
     if (mine()) {
       setSaved(text);
+      // The branch now exists: the next save continues from it, not from what was checked out.
+      if (checkout === parent) {
+        checkout = undefined;
+        setCheckedOut(null);
+      }
+      void refreshHeads();
       const at = Date.now();
       const same = updated() ? ago(updated()) === ago(at) : false;
       setUpdated(at);
@@ -114,22 +153,77 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
     }
   };
 
+  const openHistory = async () => {
+    await flush(); // a draft gets its id here
+    setHistoryOpen(!historyOpen());
+  };
+
+  // Checkout: show a version without writing anything. Editing it branches from there.
+  const openVersion = (version: VersionMeta, text: string) => {
+    checkout = version;
+    setCheckedOut(version);
+    setBody(text);
+    setSaved(text);
+    setHistoryOpen(false);
+    requestAnimationFrame(focusEnd);
+  };
+
+  // "I have seen enough": the branches stay in the tree, the badge stops asking.
+  const dismissBranches = async () => {
+    const id = noteId();
+    if (!id) return;
+    const seen = diverged().map((head) => head.id);
+    await repo.setNoteMeta(id, { acknowledged: [...new Set([...acknowledged(), ...seen])] });
+    await refreshHeads();
+  };
+
+  const backToLatest = () => {
+    checkout = undefined;
+    setCheckedOut(null);
+    void load(noteId());
+  };
+
   onMount(() => {
     focusEnd();
     const off = [
       registerFlush(flush),
       onEditorFocus(focusEnd),
       onCommand('save', () => void flush()),
-      onCommand('history', async () => {
-        await flush(); // a draft gets its id here
-        setHistoryOpen(!historyOpen());
-      }),
+      onCommand('history', () => void openHistory()),
     ];
+    // Another tab, or a pull: heads can change while this note is open.
+    const offChange = repo.onChange?.(() => void refreshHeads());
+    if (offChange) off.push(offChange);
     onCleanup(() => off.forEach((unregister) => unregister()));
   });
 
   return (
     <main class="page">
+      <Show when={checkedOut()}>
+        {(version) => (
+          <p class="notice">
+            viewing {shortId(version().id)} · {ago(version().created)} · your next edit starts a branch here
+            <button class="link" onClick={backToLatest}>
+              back to latest
+            </button>
+          </p>
+        )}
+      </Show>
+      <Show when={diverged().length > 0}>
+        <p class="notice warn">
+          {diverged().length} other {diverged().length === 1 ? 'branch' : 'branches'} (
+          {diverged()
+            .map((head) => shortId(head.id))
+            .join(', ')}
+          )
+          <button class="link" onClick={() => void openHistory()}>
+            compare
+          </button>
+          <button class="link" onClick={() => void dismissBranches()}>
+            dismiss
+          </button>
+        </p>
+      </Show>
       <Editor
         docKey={noteId() ?? 'draft'}
         ariaLabel="note body"
@@ -150,7 +244,12 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
         </span>
       </Show>
       <Show when={historyOpen() && noteId()}>
-        <History noteId={noteId()!} onClose={() => setHistoryOpen(false)} onRestore={() => void load(noteId())} />
+        <History
+          noteId={noteId()!}
+          onClose={() => setHistoryOpen(false)}
+          onOpen={openVersion}
+          onKept={() => void load(noteId())}
+        />
       </Show>
     </main>
   );

@@ -1,5 +1,7 @@
 // The one surface views are allowed to touch: no SQL, no connection, just calls.
-import type { Db, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, Version } from './types';
+import type {
+  Db, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, Version, VersionHead, VersionMeta,
+} from './types';
 
 export type NoteFilter = { tag?: string; q?: string; kind?: NoteKind };
 export type DebugTable = { name: string; count: number };
@@ -11,10 +13,14 @@ export interface Handlers {
   listNotes(filter?: NoteFilter): NoteSummary[];
   getNote(id: string): Note | undefined;
   createNote(kind: NoteKind, title?: string): string;
-  saveBody(noteId: string, body: string): boolean;
-  setNoteMeta(noteId: string, change: { title?: string; tags?: string[]; deleted?: boolean }): void;
-  versions(noteId: string): Version[];
-  heads(noteId: string): Version[];
+  saveBody(noteId: string, body: string, parentId?: string): boolean;
+  setNoteMeta(
+    noteId: string,
+    change: { title?: string; tags?: string[]; deleted?: boolean; acknowledged?: string[] },
+  ): void;
+  versions(noteId: string): VersionMeta[];
+  versionBody(noteId: string, versionId: string): string | undefined;
+  heads(noteId: string): VersionHead[];
   restoreVersion(noteId: string, versionId: string): boolean;
   items(noteId: string, showDone?: boolean): Item[];
   addItem(noteId: string, text: string, itemId?: string, depth?: number, ordering?: number): string;
@@ -43,4 +49,4 @@ export type Repo = { [K in keyof Handlers]: (...args: Parameters<Handlers[K]>) =
   readonly error?: Error | null;
 };
 
-export type { Db, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, Version };
+export type { Db, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, Version, VersionHead, VersionMeta };

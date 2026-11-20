@@ -1,8 +1,11 @@
 // Local-first data layer. Every write appends an op and materialises it through `applyOp`,
 // so local edits and pulled ops share one code path (design/002).
+import { parseAcknowledged } from '../lib/versions';
 import { migrate } from './schema';
 import { beats, between, titleFromBody, type Stamp } from './ops';
-import type { Db, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, OpKind, Version } from './types';
+import type {
+  Db, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, OpKind, Version, VersionHead, VersionMeta,
+} from './types';
 
 type Stamps = Record<string, Stamp>;
 
@@ -100,11 +103,12 @@ export function applyRemoteOp(db: Db, op: Op): boolean {
 }
 
 function applyNoteMeta(db: Db, op: Op): void {
-  const { kind, title, tags, deleted } = op.payload as {
+  const { kind, title, tags, deleted, acknowledged } = op.payload as {
     kind: NoteKind;
     title?: string;
     tags?: string[];
     deleted?: boolean;
+    acknowledged?: string[];
   };
   const row = db.get<Note>('SELECT * FROM note WHERE id = ?', [op.note_id]);
   const stamps = parseStamps(row?.stamps);
@@ -112,15 +116,20 @@ function applyNoteMeta(db: Db, op: Op): void {
 
   if (!row) {
     db.run(
-      'INSERT INTO note(id, kind, title, body, created, updated, deleted, stamps) VALUES(?,?,?,?,?,?,?,?)',
-      [op.note_id, kind, title ?? '', '', op.created, op.created, deleted ? 1 : 0, JSON.stringify(next)],
+      'INSERT INTO note(id, kind, title, body, created, updated, deleted, stamps, acknowledged) VALUES(?,?,?,?,?,?,?,?,?)',
+      [
+        op.note_id, kind, title ?? '', '', op.created, op.created, deleted ? 1 : 0, JSON.stringify(next),
+        JSON.stringify(acknowledged ?? []),
+      ],
     );
   } else if (beats(stampOf(op), stamps.meta)) {
-    db.run('UPDATE note SET title = ?, deleted = ?, updated = ?, stamps = ? WHERE id = ?', [
+    db.run('UPDATE note SET title = ?, deleted = ?, updated = ?, stamps = ?, acknowledged = ? WHERE id = ?', [
       title ?? row.title,
       deleted === undefined ? row.deleted : deleted ? 1 : 0,
       op.created,
       JSON.stringify(next),
+      // A meta op from a client that does not know the field must not wipe it.
+      acknowledged === undefined ? row.acknowledged : JSON.stringify(acknowledged),
       op.note_id,
     ]);
   } else {
@@ -230,16 +239,23 @@ export function createNote(db: Db, kind: NoteKind, title = ''): string {
   });
 }
 
-/** Writes a snapshot only when the body differs from the current one; returns whether it wrote. */
-export function saveBody(db: Db, noteId: string, body: string, versionId = crypto.randomUUID()): boolean {
+/**
+ * Writes a snapshot only when the body differs from the current one; returns whether it wrote.
+ * `parentId` names the version this text was written from: an edit after checking out an old
+ * version branches there instead of continuing from the head (design/002).
+ */
+export function saveBody(db: Db, noteId: string, body: string, parentId?: string): boolean {
   return tx(db, () => {
     const note = db.get<Note>('SELECT * FROM note WHERE id = ?', [noteId]);
     if (!note) throw new Error(`unknown note ${noteId}`);
     if (note.kind !== 'note') throw new Error(`note ${noteId} is a ${note.kind}`);
+    if (parentId && !db.get('SELECT 1 FROM version WHERE id = ? AND note_id = ?', [parentId, noteId])) {
+      throw new Error(`unknown version ${parentId} on note ${noteId}`);
+    }
     if (note.body === body) return false;
     appendOp(db, 'note_snapshot', noteId, {
-      version_id: versionId,
-      parent_version_id: headVersionId(db, noteId),
+      version_id: crypto.randomUUID(),
+      parent_version_id: parentId ?? headVersionId(db, noteId),
       body,
     });
     return true;
@@ -249,7 +265,7 @@ export function saveBody(db: Db, noteId: string, body: string, versionId = crypt
 export function setNoteMeta(
   db: Db,
   noteId: string,
-  change: { title?: string; tags?: string[]; deleted?: boolean },
+  change: { title?: string; tags?: string[]; deleted?: boolean; acknowledged?: string[] },
 ): void {
   tx(db, () => {
     const note = db.get<Note>('SELECT * FROM note WHERE id = ?', [noteId]);
@@ -260,6 +276,7 @@ export function setNoteMeta(
       title: change.title ?? note.title,
       tags,
       deleted: change.deleted ?? note.deleted === 1,
+      acknowledged: change.acknowledged ?? parseAcknowledged(note),
     });
   });
 }
@@ -359,17 +376,23 @@ export function listNotes(db: Db, filter: { tag?: string; q?: string; kind?: Not
   );
 }
 
-export function versions(db: Db, noteId: string): Version[] {
-  return db.all<Version>(
-    'SELECT * FROM version WHERE note_id = ? ORDER BY lamport DESC, device DESC',
+export function versions(db: Db, noteId: string): VersionMeta[] {
+  return db.all<VersionMeta>(
+    `SELECT id, parent_id, lamport, device, created, substr(body, 1, 160) AS snippet
+       FROM version WHERE note_id = ? ORDER BY lamport DESC, device DESC`,
     [noteId],
   );
 }
 
+/** One version's full body, for the preview-free history screen: loaded only when needed. */
+export function versionBody(db: Db, noteId: string, versionId: string): string | undefined {
+  return db.get<{ body: string }>('SELECT body FROM version WHERE id = ? AND note_id = ?', [versionId, noteId])?.body;
+}
+
 /** Leaves of the version tree: versions nobody points at. More than one means a conflict. */
-export function heads(db: Db, noteId: string): Version[] {
-  return db.all<Version>(
-    `SELECT * FROM version v WHERE v.note_id = ?
+export function heads(db: Db, noteId: string): VersionHead[] {
+  return db.all<VersionHead>(
+    `SELECT v.id, v.lamport, v.device, v.created FROM version v WHERE v.note_id = ?
        AND NOT EXISTS (SELECT 1 FROM version c WHERE c.parent_id = v.id)
      ORDER BY v.lamport DESC, v.device DESC`,
     [noteId],

@@ -12,14 +12,15 @@ The server adds a per-owner `server_seq` used only as a pull cursor.
 
 | kind            | payload                                              |
 | --------------- | ---------------------------------------------------- |
-| `note_meta`     | `{note_id, kind, title, tags[], deleted}`            |
+| `note_meta`     | `{note_id, kind, title, tags[], deleted, acknowledged[]}` |
 | `note_snapshot` | `{note_id, version_id, parent_version_id, body}`     |
 | `todo_item`     | `{note_id, item_id, text?, done?, deleted?, order?}` |
 
 Every op also carries `lamport` and a wall-clock `created` (display only).
 
-- `note_meta` is last-writer-wins as a whole object: it creates a note, and covers rename, tagging
-  and the tombstone.
+- `note_meta` is last-writer-wins as a whole object: it creates a note, and covers rename, tagging,
+  the tombstone and the acknowledged heads. An op that predates `acknowledged` leaves the column
+  alone instead of wiping it.
 - `note_snapshot` carries a whole compressed body, `parent_version_id` pointing at the version it
   was written from, and is only written when the body differs from that parent.
 - `todo_item` carries only the fields it changes, so a check-off is a few dozen bytes.
@@ -43,7 +44,7 @@ sync_state(device, server_cursor, last_sync_at)
 Materialised (cheap to rebuild by replaying `op`):
 
 ```
-note(id, kind, title, body, created, updated, deleted, lamport, device)
+note(id, kind, title, body, created, updated, deleted, lamport, device, acknowledged)
 version(id, note_id, parent_id, body, lamport, device, created)
 todo_item(id, note_id, text, done, ordering, deleted, lamport, device)
 todo_item_op(id, item_id, note_id, fields, lamport, device, created)  -- per-item history index
@@ -60,11 +61,18 @@ the materialised tables is authoritative: it can be dropped and rebuilt.
 - **Heads** are the leaves: `SELECT … WHERE id NOT IN (SELECT parent_id FROM version WHERE parent_id
 IS NOT NULL)`. One indexed query, no recursion.
 - **Current body** is the head with the highest `(lamport, device)`. With two heads, the lower one
-  stays reachable in history; the version tree view is the feature that surfaces both.
-- **Restore** (or editing an old version) is a normal op: a new snapshot whose parent is the chosen
-  version. It becomes current by lamport like any other write.
-- A conflict badge later is just "more than one head"; marking it resolved needs stored state and is
-  not designed yet.
+  stays reachable in history and the note view says so.
+- **Checking a version out writes nothing.** The editor shows that version's body, and the note's own
+  row keeps pointing at the head. The first edit after a checkout is a normal snapshot whose parent
+  is the checked-out version: it becomes current by lamport, and the version it left is still a head.
+  No merge op exists and none is planned, so both branches stay in the tree for good. A reload or a
+  navigation drops the checkout and the head's body comes back.
+- **Keeping a version** (`keep this version`, or a plain restore) is a snapshot whose parent is the
+  *current head* and whose body is the chosen one. History stays a single line: the passed-over text
+  remains as an ancestor. It also records the other heads in `note_meta.acknowledged`, which is what
+  clears the divergence badge — the branches themselves never disappear.
+- **Acknowledged heads** are bookkeeping, not history: the ids live in `note_meta` and sync, so a
+  branch dismissed on one device stops asking everywhere. A new branch always asks again.
 
 ## Todo history
 

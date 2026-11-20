@@ -71,7 +71,7 @@ describe('notes', () => {
     repo.saveBody(db, id, 'two');
     const [newest, oldest] = repo.versions(db, id);
     expect(newest.parent_id).toBe(oldest.id);
-    expect(repo.heads(db, id)).toEqual([newest]);
+    expect(repo.heads(db, id).map((head) => head.id)).toEqual([newest.id]);
   });
 
   it('restores an old version as a new head', () => {
@@ -95,7 +95,7 @@ describe('notes', () => {
 
     expect(repo.heads(db, id)).toHaveLength(2);
     expect(repo.getNote(db, id)!.body).toBe('theirs');
-    expect(repo.versions(db, id).map((v) => v.body)).toEqual(['theirs', 'mine']);
+    expect(repo.versions(db, id).map((v) => v.snippet)).toEqual(['theirs', 'mine']);
   });
 
   it('ignores a snapshot that loses the lamport race', () => {
@@ -107,6 +107,24 @@ describe('notes', () => {
 
     expect(repo.getNote(db, id)!.body).toBe('newer');
     expect(repo.versions(db, id)).toHaveLength(2);
+  });
+
+  it('remembers acknowledged heads in note_meta', () => {
+    const db = fresh();
+    const id = repo.createNote(db, 'note');
+    repo.setNoteMeta(db, id, { acknowledged: ['head-1'] });
+    expect(JSON.parse(repo.getNote(db, id)!.acknowledged)).toEqual(['head-1']);
+    // A meta op from a client that does not know the field must not wipe it.
+    remote(db, {
+      device: 'dev-b',
+      id: 'op-meta',
+      kind: 'note_meta',
+      note_id: id,
+      lamport: 99,
+      created: 1_700_000_000_099,
+      payload: { kind: 'note', title: 'renamed', tags: [], deleted: false },
+    });
+    expect(repo.getNote(db, id)!.title).toBe('renamed');
   });
 
   it('tombstones a deleted note', () => {

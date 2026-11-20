@@ -68,7 +68,11 @@ the readiness marker the browser tests wait on.
 ## Phase 4: Advanced, unordered
 
 - [ ] observability in acta
-- [ ] version tree view: browse the tree, open a note at any node, edit an old version, mark resolved
+- [x] version tree view: git-style lanes from `parent_id`, per-version snippet, checkout without a
+      write, keep-with-acknowledge, divergence banner in the note view
+- [ ] compare two heads side by side (a diff, not a preview): the tree shows divergence, it cannot
+      yet show what differs
+- [ ] a dot in the note list for notes with unacknowledged heads (`head_count` in `listNotes`)
 - [ ] vim mode for the note editor (pick the implementation then; the editor is behind one component)
 - [ ] quick capture: `…/?q=work buy milk` opens the `work` todo list with a new item appended
 - [ ] tags: derive them from the note body (e.g. `#tag` lines) instead of an input field

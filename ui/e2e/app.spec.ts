@@ -144,7 +144,7 @@ test('deletes the open note', async ({ page }) => {
   await expect(page.getByText('nothing yet')).toBeVisible();
 });
 
-test('restores an old version from history', async ({ page }) => {
+test('opens an old version from history without writing a version', async ({ page }) => {
   await page.goto('/');
   await ready(page);
   await editor(page).fill('first draft');
@@ -153,11 +153,36 @@ test('restores an old version from history', async ({ page }) => {
   await press(page, 's');
 
   await page.keyboard.press(`${MOD}+Shift+H`);
-  const versions = page.locator('.version');
-  await expect(versions).toHaveCount(2);
-  await versions.last().click();
+  const rows = page.locator('.vrow');
+  await expect(rows).toHaveCount(2);
+  await rows.last().click();
+  await page.getByRole('button', { name: 'open in editor' }).click();
 
   await expectBody(page, 'first draft');
+  await expect(page.getByText(/viewing/)).toBeVisible();
+
+  // A checkout is not a write: history is still two versions, and the note still holds the head.
+  await page.keyboard.press(`${MOD}+Shift+H`);
+  await expect(page.locator('.vrow')).toHaveCount(2);
+  await page.keyboard.press('Escape');
+});
+
+test('keeping a version from history makes it the current text', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await editor(page).fill('first draft');
+  await press(page, 's');
+  await editor(page).fill('second draft');
+  await press(page, 's');
+
+  await page.keyboard.press(`${MOD}+Shift+H`);
+  await page.locator('.vrow').last().click();
+  await page.getByRole('button', { name: 'keep this version' }).click();
+
+  await expectBody(page, 'first draft');
+  await page.keyboard.press(`${MOD}+Shift+H`);
+  await expect(page.locator('.vrow')).toHaveCount(3);
+  await page.keyboard.press('Escape');
 });
 
 test('runs a todo list: add, edit in place, check off with cmd, delete', async ({ page }) => {

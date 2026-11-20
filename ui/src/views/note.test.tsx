@@ -73,7 +73,7 @@ describe('Note view', () => {
 
     runCommand('save'); // the body is not on screen yet
     await new Promise((r) => setTimeout(r, 120));
-    expect((await repo.versions(id)).map((v) => v.body)).toEqual(['content']);
+    expect((await repo.versions(id)).map((v) => v.snippet)).toEqual(['content']);
   });
 
   it('saves on blur, not while typing', async () => {
@@ -106,7 +106,7 @@ describe('Note view', () => {
     expect(await repo.versions(id)).toHaveLength(1);
   });
 
-  it('opens history with a command and restores by clicking a version', async () => {
+  it('opens history, checks an old version out, and writes only when edited', async () => {
     const repo = testRepo();
     const id = await repo.createNote('note');
     await repo.saveBody(id, 'first');
@@ -115,12 +115,69 @@ describe('Note view', () => {
 
     runCommand('history');
     const rows = await waitFor(() => {
-      const found = document.querySelectorAll('.version');
+      const found = document.querySelectorAll('.vrow');
       expect(found.length).toBe(2);
       return found;
     });
     fireEvent.click(rows[1]); // the older one
+    fireEvent.click(screen.getByText('open in editor'));
 
+    // Checkout is not a write: the history is still two versions, and so is the database.
+    await waitFor(() => expect(screen.getByLabelText('note body')).toHaveProperty('value', 'first'));
+    expect(await repo.versions(id)).toHaveLength(2);
+    expect((await repo.getNote(id))!.body).toBe('second');
+
+    // The first edit branches from the checked-out version instead of continuing the head.
+    fireEvent.input(screen.getByLabelText('note body'), { target: { value: 'first, edited' } });
+    fireEvent.blur(screen.getByLabelText('note body'));
+    await waitFor(async () => expect(await repo.versions(id)).toHaveLength(3));
+    const versions = await repo.versions(id);
+    const edited = versions.find((version) => version.snippet === 'first, edited')!;
+    const first = versions.find((version) => version.snippet === 'first')!;
+    expect(edited.parent_id).toBe(first.id);
+    expect(await repo.heads(id)).toHaveLength(2);
+  });
+
+  it('keeps a version from history as the current text and clears the branch', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('note');
+    await repo.saveBody(id, 'first');
+    await repo.saveBody(id, 'second');
+    renderWithRepo(() => <NoteView id={id} />, repo);
+
+    runCommand('history');
+    const rows = await waitFor(() => {
+      const found = document.querySelectorAll('.vrow');
+      expect(found.length).toBe(2);
+      return found;
+    });
+    fireEvent.click(rows[1]);
+    fireEvent.click(screen.getByText('keep this version'));
+
+    // Keeping is a normal snapshot on top of the head: history stays a line, nothing forks.
     await waitFor(async () => expect(await repo.getNote(id)).toMatchObject({ body: 'first' }));
+    expect(await repo.heads(id)).toHaveLength(1);
+    expect(await repo.versions(id)).toHaveLength(3);
+  });
+
+  it('flags a competing branch and dismisses it without touching the text', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('note');
+    await repo.saveBody(id, 'a');
+    const root = (await repo.versions(id))[0];
+    await repo.saveBody(id, 'b'); // head
+    await repo.saveBody(id, 'c', root.id); // a second head from the same version
+    expect(await repo.heads(id)).toHaveLength(2);
+
+    renderWithRepo(() => <NoteView id={id} />, repo);
+
+    const notice = await waitFor(() => screen.getByText(/other branch/));
+    expect(notice.textContent).toContain('c');
+    fireEvent.click(screen.getByText('dismiss'));
+
+    await waitFor(() => expect(screen.queryByText(/other branch/)).toBeNull());
+    const note = await repo.getNote(id);
+    expect(JSON.parse(note!.acknowledged)).toHaveLength(1);
+    expect(note!.body).toBe('c'); // dismissing is bookkeeping, not an edit
   });
 });
