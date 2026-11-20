@@ -160,7 +160,10 @@ export default function Sync(props: { onClose: () => void }) {
       <Show when={usage()}>
         <p class="muted small">{usage()}</p>
       </Show>
-      <p class="muted small">press Enter to sync now, Escape to close</p>
+      <button type="button" class="action" disabled={busy()} onClick={() => void attempt(() => sync.run('manual'))}>
+        sync now
+      </button>
+      <p class="keys muted small">press Enter to sync now, Escape to close</p>
       {secret('Token — this account on the server. The key that decrypts it is not stored here.', sync.token())}
       <p class="separator muted small">
         re-pull the whole log: fills a version that never arrived, applies only what is missing
@@ -188,6 +191,9 @@ export default function Sync(props: { onClose: () => void }) {
 
   return (
     <section class="overlay" aria-label="sync">
+      <button type="button" class="overlay-close" onClick={props.onClose}>
+        close
+      </button>
       <Show when={fresh()} keyed fallback={<Show when={sync.enrolled()} fallback={enrolForm()}>{enrolledView()}</Show>}>
         {(created) => freshView(created)}
       </Show>

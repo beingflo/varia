@@ -75,6 +75,14 @@ does; a static host needs the SPA fallback configured.
   editing it in. Divergence has no UI state: the tree shows the fork, the note view says nothing.
   Everything reads off the local log, so it works offline; todo lists have no versions.
 
+### Touch screens
+
+A coarse pointer or a window under 700px has no keyboard, so the same commands are buttons in a bar
+at the bottom: notes, new note, new list, versions — a list gets the show-done toggle instead — and
+sync. Overlays get a visible close, a todo row's bullet is its checkbox, and the history tree stacks
+above the preview instead of sitting beside it. The bar only dispatches the ordinary commands, so no
+behaviour differs between the two.
+
 ### Todo lists
 
 What is being typed lives in state (`edits`: row id → text), not in the input, and every write is

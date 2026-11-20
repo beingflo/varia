@@ -66,6 +66,21 @@ describe('Todo view', () => {
     await waitFor(async () => expect((await items(repo, id))[0].done).toBe(1));
   });
 
+  it('checks an item off when its bullet is clicked', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('todo', 'work');
+    await repo.addItem(id, 'milk');
+    renderWithRepo(() => <TodoView id={id} />, repo);
+    await screen.findByDisplayValue('milk');
+
+    fireEvent.click(screen.getByLabelText('check item'));
+    await waitFor(async () => expect((await items(repo, id))[0].done).toBe(1));
+
+    runCommand('toggle-done'); // a checked item is hidden until the done rows are shown
+    fireEvent.click(screen.getByLabelText('uncheck item'));
+    await waitFor(async () => expect((await items(repo, id))[0].done).toBe(0));
+  });
+
   it('hides checked items until the toggle-done command runs', async () => {
     const repo = testRepo();
     const id = await repo.createNote('todo', 'work');

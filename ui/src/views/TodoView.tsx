@@ -564,7 +564,14 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
                   }
                 }}
               >
-                <span class="bullet" aria-hidden="true" />
+                <button
+                  type="button"
+                  class="bullet-btn"
+                  aria-label={item.done ? 'uncheck item' : 'check item'}
+                  onClick={() => toggle(item.id)}
+                >
+                  <span class="bullet" aria-hidden="true" />
+                </button>
                 <span class="item-body">
                   <input
                     class="item-text"

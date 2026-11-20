@@ -71,12 +71,15 @@ export default function History(props: { noteId: string; onClose: () => void }) 
 
   return (
     <section class="overlay history" aria-label="history">
+      <button type="button" class="overlay-close" onClick={props.onClose}>
+        close
+      </button>
       <div class="history-head">
         <p class="muted small">
           {tree().rows.length} versions
           <Show when={tree().heads > 1}> · {tree().heads} heads, the newest is current</Show>
         </p>
-        <p class="muted small">↑↓ select · esc close</p>
+        <p class="muted small keys">↑↓ select · esc close</p>
       </div>
 
       <div class="history-main">

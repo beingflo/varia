@@ -66,6 +66,9 @@ export default function NoteList(props: {
 
   return (
     <section class="overlay" aria-label="notes">
+      <button type="button" class="overlay-close" onClick={props.onClose}>
+        close
+      </button>
       <input
         ref={search}
         class="search"

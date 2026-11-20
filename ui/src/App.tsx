@@ -1,5 +1,6 @@
 import { createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js';
 import HistoryHost from './components/History';
+import MobileBar from './components/MobileBar';
 import Sync from './components/Sync';
 import SyncDot from './components/SyncDot';
 import { useRepo } from './db/context';
@@ -38,6 +39,13 @@ export default function App() {
   onMount(() => {
     engine.start();
     onCleanup(() => engine.stop());
+    // A phone suspends the app without ever blurring the editor, and without a server there is
+    // no hidden-tab sync to flush it: save on the way out.
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') void flushAll(true);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    onCleanup(() => document.removeEventListener('visibilitychange', onVisibility));
     void (async () => {
       const note = linkedId ? await repo.getNote(linkedId) : undefined;
       if (note) setOpen({ kind: note.kind, id: note.id });
@@ -121,6 +129,7 @@ export default function App() {
       <Show when={syncOpen()}>
         <Sync onClose={() => setSyncOpen(false)} />
       </Show>
+      <MobileBar kind={open().kind} />
       <SyncDot />
     </SyncProvider>
   );

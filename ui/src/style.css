@@ -39,6 +39,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--muted); outline
 }
 
 .meta { width: 100%; max-width: var(--measure); margin: 1rem auto 0; display: flex; align-items: center; gap: 1rem; }
+/* Both live only on a screen without a keyboard, where the shortcuts cannot be pressed. */
+.mobile-bar, .overlay-close { display: none; }
+
 /* Sync state, on every screen. Under the overlays (z 50): those are modal and opaque. */
 .sync-dot {
   position: fixed; right: 0.85rem; bottom: 0.85rem; z-index: 40; pointer-events: none;
@@ -63,7 +66,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--muted); outline
 .items { list-style: none; margin: 0; padding: 0; }
 .items li { position: relative; display: flex; align-items: baseline; gap: 0.55rem; padding: 0.1rem 0; }
 .items li.done .item-text { color: var(--muted); text-decoration: line-through; }
-.bullet { flex: none; width: 4px; height: 4px; border-radius: 50%; background: var(--ink); align-self: center; }
+/* The bullet is the checkbox: a finger has no ⌘ to click the row with. */
+.bullet-btn { flex: none; align-self: center; display: grid; place-items: center; padding: 0.6rem; margin: -0.6rem; }
+.bullet { flex: none; align-self: center; width: 4px; height: 4px; border-radius: 50%; background: var(--ink); }
 .item-body { position: relative; flex: 1; min-width: 0; display: flex; }
 .item-text { flex: 1; min-width: 0; }
 .item-warn { position: absolute; top: 0.1rem; color: var(--warn); pointer-events: none; }
@@ -144,6 +149,11 @@ input[type='search']::-webkit-search-cancel-button { display: none; }
   .vrow .vwhen { width: 2.9rem; }
   .history-main { gap: 0.75rem; }
   .version-preview { padding-left: 0.75rem; }
+  /* Two 150px columns make the preview unreadable: stack them, the tree keeps its own scroll so a
+     long history does not push the selected version off screen. */
+  .history-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: max-content minmax(0, 1fr); gap: 0; }
+  .tree { max-height: 40vh; }
+  .version-preview { border-left: none; border-top: 1px solid var(--line); padding: 0.6rem 0 0; }
 }
 
 .muted { color: var(--muted); }
@@ -176,3 +186,24 @@ input[type='search']::-webkit-search-cancel-button { display: none; }
   border-top: 1px solid var(--line); padding-top: 0.7rem; margin: 0 0 0.7rem;
 }
 .warn { color: var(--warn); }
+
+/* Touch screens and narrow windows: the same commands as buttons, the way out of an overlay
+   as a button, and room at the bottom so the bar covers no text. */
+@media (pointer: coarse), (max-width: 700px) {
+  .page { padding-bottom: 4.5rem; }
+  .mobile-bar {
+    position: fixed; inset: auto 0 0 0; z-index: 30; display: flex; justify-content: space-between;
+    gap: 0.5rem; font-size: 0.8rem; color: var(--muted); background: var(--bg);
+    border-top: 1px solid var(--line);
+    padding: 0.35rem max(0.9rem, env(safe-area-inset-left)) calc(0.35rem + env(safe-area-inset-bottom))
+      max(0.9rem, env(safe-area-inset-right));
+  }
+  .mobile-bar button { padding: 0.5rem 0; color: var(--muted); }
+  .sync-dot { bottom: calc(3.1rem + env(safe-area-inset-bottom)); }
+  .overlay-close {
+    display: block; position: absolute; top: 1.5rem; right: max(0.9rem, env(safe-area-inset-right));
+    z-index: 2; font-size: 0.8rem; color: var(--muted);
+  }
+  .overlay .search { padding-right: 3.5rem; }
+  .keys { display: none; }
+}
