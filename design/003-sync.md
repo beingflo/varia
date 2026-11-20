@@ -57,7 +57,7 @@ POST /api/sync     {device, cursor, ops[]}     → {ops[], cursor, more, usage_b
 ```
 
 `/api/sync` pushes and pulls in one request. Push is best-effort per op: duplicates are ignored,
-ordering is the server's `server_seq`. Pull returns ops with `server_seq > cursor`, at most 500 ops
+ordering is the server's `server_seq`. Pull returns ops with `server_seq > cursor`, at most 2000 ops
 or 8 MB, with `more: true` when the client should immediately request again.
 
 A token holder who is not the user can read the envelope metadata (device ids, note ids, kinds,
@@ -107,8 +107,9 @@ The old account's log stays on the server, unreadable without a key that device 
   otherwise pin the cursor forever; `syncNow` counts them in `skipped` and moves on.
 - **A pulled page is decrypted in parallel and applied in one transaction.** Per-op work was the
   whole cost of a replay: one worker round trip, one commit and one view refresh each. Measured on
-  Chromium: a 500-op page costs ~21 ms of request and ~86 ms of apply; 400 ops land on a fresh
-  device in ~130 ms. The crypto was never the bottleneck.
+  Chromium: a page costs ~21 ms of request and ~86 ms of apply per 500 ops, so ~0.2 ms per op; 400
+  ops landed on a fresh device in ~130 ms. The crypto was never the bottleneck, so the page size only
+  trades requests against the size of one response (2,000 ops is a few MB of ciphertext).
 - **At most five push/pull rounds per call**, so a large backlog drains over several syncs instead of
   holding one request open.
 - **The local lamport clock is raised to the remote one** when an op is applied, otherwise the next
@@ -158,8 +159,8 @@ account log comes down. Both devices end with the union, ordered by `(lamport, d
   everything written before it, on either side.
 - **Only ops new to the account are stored**: the server dedupes on the op id, so a history that is
   already up there is re-pushed harmlessly (and its `pushed` flags go back to 1).
-- **A rich history costs requests.** Pages are 500 ops and the token bucket allows 10 burst / 30 per
-  minute, so a few thousand ops land immediately and the rest arrive with backoff.
+- **A rich history costs requests.** Pages are 2,000 ops and the token bucket allows 10 burst / 30 per
+  minute, so 20,000 ops land within the burst and the rest arrive with backoff.
 
 ## Conflict
 

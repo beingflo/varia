@@ -142,8 +142,13 @@ single line — "synced 2 min ago", "4 changes pending", "sync off" — and the 
 next to it. No progress bars, no conflict dialogs in v1.
 
 A device that has a token but an empty database pulls from cursor 0 and replays; this is also the
-recovery path after iOS evicts storage, so it must be fast enough to feel like a first-run load
-rather than a restore.
+recovery path after iOS evicts storage, so it must feel like a first-run load. Measured with the
+sqlite-wasm build, real envelopes, 500-op pages: 1k ops 0.17 s, 5k 0.9 s, 20k 2.8 s — about 0.15 ms
+per op, CPU-bound, with file I/O adding less than that. The pull runs behind `data-db="ready"`, so
+notes stream in while the app is usable. The wall clock past the burst is the service's limiter
+(10 burst, 30 per minute) rather than the replay, so `pull_limit` was raised from 500 to 2,000 —
+20,000 ops in 11 requests instead of 41 — which is the lever to reach for before a `checkpoint` op
+kind (`PLAN.md`).
 
 ## Sync
 

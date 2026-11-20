@@ -34,9 +34,11 @@ Each phase is shippable on its own. Later phases must not force a change to the 
 - [x] favicon and install icons
 - [x] landing page at `/landing`, `/` routes by the `varia:entered` flag, `/app` for installed windows
 - [x] sync state dot in the bottom-right corner on every screen
-- [ ] iOS install flow and first-run guidance
-- [ ] eviction recovery: token present + empty database → full re-pull from cursor 0
-- [ ] measure cold-start replay and decide whether checkpoints are needed
+- [x] eviction recovery: an empty database reads its cursor as 0, so the whole log replays
+- [x] measure cold-start replay and decide whether checkpoints are needed: 1k/5k/20k ops replay in
+      0.17/0.9/2.8 s (sqlite-wasm, real crypto), never blocking the UI. Past the burst it is the
+      service's request bucket that sets the wall clock, not the replay, so `pull_limit` went from
+      500 to 2,000 ops per page: a full 20,000-op replay is now 11 requests instead of 41
 - [ ] Backup mechanism
 
 ## Phase 4: Advanced, unordered
@@ -56,7 +58,7 @@ Each phase is shippable on its own. Later phases must not force a change to the 
 - [ ] drag and drop for list items: pointer-based with the bullet as the handle, `ordering` and `depth`
       in one `todo_item` op, `⌥↑`/`⌥↓` to move and `⌥→`/`⌥←` to nest
 - [ ] `note_patch` ops and content-addressed chunk dedupe, when snapshot volume hurts
-- [ ] `checkpoint` ops for fast fresh-device bootstrap
+- [ ] `checkpoint` ops for fast fresh-device bootstrap, only if a real account passes ~5k ops
 
 ## Not planned
 

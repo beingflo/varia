@@ -112,6 +112,23 @@ describe('convergence', () => {
     expect(await shape(b, id)).toEqual(await shape(a, id));
   });
 
+  it('an empty database with the token and key pulls the whole log again', async () => {
+    const { key, a } = await pair();
+    const server = fakeServer();
+    const id = await a.createNote('note');
+    await a.saveBody(id, 'line 1');
+    await a.saveBody(id, 'line 2');
+    while ((await syncNow({ repo: a, key, token: 't', transport: server.transport })).more);
+
+    // What an evicted install leaves: the account, no database. Its cursor is 0, so the log replays.
+    const evicted = testRepo('device-a');
+    expect(await evicted.syncCursor(await accountTag('t'))).toBe(0);
+    while ((await syncNow({ repo: evicted, key, token: 't', transport: server.transport })).more);
+
+    expect(await shape(evicted, id)).toEqual(await shape(a, id));
+    expect((await evicted.getNote(id))?.body).toBe('line 2');
+  });
+
   it('both devices write, then both sync: each keeps the other branch', async () => {
     const { key, a, b } = await pair();
     const server = fakeServer();

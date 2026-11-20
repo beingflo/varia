@@ -33,7 +33,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             cap_bytes: 500 * 1024 * 1024,
-            pull_limit: 500,
+            pull_limit: 2000,
             max_op_bytes: 4 * 1024 * 1024,
             max_request_bytes: 16 * 1024 * 1024,
             sync_burst: 10.0,
