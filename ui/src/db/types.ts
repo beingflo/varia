@@ -57,6 +57,9 @@ export interface VersionMeta {
   created: number;
 }
 
+/** A version's body and the body of the version it was written from: `null` for a root. */
+export type VersionPair = { body: string; parentBody: string | null };
+
 export interface VersionHead {
   id: string;
   lamport: number;

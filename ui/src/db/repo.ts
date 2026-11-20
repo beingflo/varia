@@ -3,7 +3,7 @@
 import { migrate } from './schema';
 import { beats, between, titleFromBody, type Stamp } from './ops';
 import type {
-  Db, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, OpKind, Version, VersionHead, VersionMeta,
+  Db, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, OpKind, Version, VersionHead, VersionMeta, VersionPair,
 } from './types';
 
 type Stamps = Record<string, Stamp>;
@@ -77,6 +77,9 @@ function appendOp(db: Db, kind: OpKind, noteId: string, payload: Record<string, 
   return op;
 }
 
+/** The kinds this client applies. Anything else came from a newer one. */
+const KNOWN_KINDS = new Set<string>(['note_meta', 'note_snapshot', 'todo_item']);
+
 /** The single materialisation entry point: local writes and pulled ops both land here. */
 export function applyOp(db: Db, op: Op): void {
   if (op.kind === 'note_meta') applyNoteMeta(db, op);
@@ -94,6 +97,9 @@ export function applyRemoteOps(db: Db, ops: Op[]): number {
 export function applyRemoteOp(db: Db, op: Op): boolean {
   // The local clock must pass the remote one, or the next local write loses the tie-break.
   if (op.lamport > Number(meta(db, 'lamport') ?? '0')) setMetaValue(db, 'lamport', String(op.lamport));
+  // A kind from a newer client: skip it, and deliberately not through `op_seen`, so this device
+  // applies it once it knows the kind (after an upgrade, or a repair that re-pulls the log).
+  if (!KNOWN_KINDS.has(op.kind)) return false;
   const seen = db.get('SELECT 1 FROM op_seen WHERE id = ?', [op.id]);
   if (seen) return false;
   db.run('INSERT INTO op_seen(id) VALUES(?)', [op.id]);
@@ -365,8 +371,18 @@ export function versions(db: Db, noteId: string): VersionMeta[] {
 }
 
 /** One version's full body, for the preview-free history screen: loaded only when needed. */
-export function versionBody(db: Db, noteId: string, versionId: string): string | undefined {
-  return db.get<{ body: string }>('SELECT body FROM version WHERE id = ? AND note_id = ?', [versionId, noteId])?.body;
+/**
+ * One version and the body it was written from, in one read: the history pane shows both the text
+ * and the diff against its parent, and the parent is what makes the two a single query.
+ */
+export function versionPair(db: Db, noteId: string, versionId: string): VersionPair | undefined {
+  const row = db.get<{ body: string; parent_id: string | null }>(
+    'SELECT body, parent_id FROM version WHERE id = ? AND note_id = ?',
+    [versionId, noteId],
+  );
+  if (!row) return undefined;
+  const parent = row.parent_id ? db.get<{ body: string }>('SELECT body FROM version WHERE id = ?', [row.parent_id]) : undefined;
+  return { body: row.body, parentBody: parent?.body ?? null };
 }
 
 /** Leaves of the version tree: versions nobody points at. More than one means a conflict. */

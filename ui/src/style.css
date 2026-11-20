@@ -103,11 +103,11 @@ input[type='search']::-webkit-search-cancel-button { display: none; }
   /* The base overlay centres a 74ch column; history is a two-pane screen and uses the width. */
   padding-block: 1.25rem 0; padding-inline: 0;
 }
-.history-head { width: 100%; max-width: 72rem; margin-inline: auto; padding-inline: clamp(1rem, 2vw, 2rem); }
-/* Tree and preview side by side: the pane is how a version is read, so it never hides the list. */
+.history-head { width: 100%; max-width: 96rem; margin-inline: auto; padding-inline: clamp(1rem, 2vw, 2rem); }
+/* Tree, the version itself and its diff against its parent: none of the three hides another. */
 .history-main {
-  display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 1.5rem;
-  width: 100%; max-width: 72rem; margin-inline: auto; padding-inline: clamp(1rem, 2vw, 2rem);
+  display: grid; grid-template-columns: max-content minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem;
+  width: 100%; max-width: 96rem; margin-inline: auto; padding-inline: clamp(1rem, 2vw, 2rem);
   flex: 1 1 auto; min-height: 0;
 }
 /* Its own scroll, and it must not hand the wheel to the page behind it at the ends. */
@@ -116,10 +116,14 @@ input[type='search']::-webkit-search-cancel-button { display: none; }
   border-left: 1px solid var(--line); padding-left: 1.25rem;
 }
 .version-preview p { margin: 0 0 0.6rem; }
-.version-body {
+.version-body, .version-diff-body {
   margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.8rem; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere;
 }
+/* One row per line, so the tint of an added or removed line runs the width of the pane. */
+.version-diff-body span { display: block; }
+.version-diff-body .d-added { background: color-mix(in srgb, var(--ok) 16%, transparent); }
+.version-diff-body .d-removed { background: color-mix(in srgb, var(--danger) 14%, transparent); }
 .history-head p { margin: 0 0 0.2rem; }
 .tree { position: relative; overflow: auto; min-height: 0; outline: none; margin-block: 0.5rem; overscroll-behavior: contain; }
 .tree:focus-visible { outline: none; }
@@ -143,6 +147,18 @@ input[type='search']::-webkit-search-cancel-button { display: none; }
 }
 .vrow .vtag.branch { border-color: var(--warn); color: var(--warn); }
 
+/* Not wide enough for three panes: the tree stays beside the two text panes, stacked. */
+@media (max-width: 72rem) {
+  .history-main {
+    grid-template-columns: max-content minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 0.75rem 1.5rem;
+  }
+  .tree { grid-row: 1 / span 2; }
+  /* The diff above the text, as in the narrow stack: the summary comes first. */
+  .version-diff { grid-row: 1; border-left: none; padding: 0; }
+  .version-preview:not(.version-diff) { grid-row: 2; border-top: 1px solid var(--line); padding: 0.6rem 0 0; }
+}
+
 /* Narrow screens: still side by side, with a tighter tree column. */
 @media (max-width: 36rem) {
   /* No snippet in the row any more, so the id fits even here. */
@@ -150,10 +166,14 @@ input[type='search']::-webkit-search-cancel-button { display: none; }
   .vrow .vwhen { width: 2.9rem; }
   .history-main { gap: 0.75rem; }
   .version-preview { padding-left: 0.75rem; }
-  /* Two 150px columns make the preview unreadable: stack them, the tree keeps its own scroll so a
-     long history does not push the selected version off screen. */
-  .history-main { grid-template-columns: minmax(0, 1fr); grid-template-rows: max-content minmax(0, 1fr); gap: 0; }
-  .tree { max-height: 40vh; }
+  /* Two narrow columns make the text unreadable: stack the panes under the tree, the diff first,
+     and keep the tree on its own scroll so a long history does not push the version off screen. */
+  .history-main {
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: max-content minmax(0, 1fr) minmax(0, 1fr); gap: 0;
+  }
+  .tree { grid-row: 1; max-height: 32vh; }
+  .version-diff { grid-row: 2; }
+  .version-preview:not(.version-diff) { grid-row: 3; }
   .version-preview { border-left: none; border-top: 1px solid var(--line); padding: 0.6rem 0 0; }
 }
 

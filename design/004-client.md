@@ -68,8 +68,9 @@ does; a static host needs the SPA fallback configured.
   saved or left is not written. If the body equals the current one, no op is written.
 - **Todos**: rows of checkbox + text, an always-present empty row at the bottom for appending,
   "show done" toggle (default off). Checking an item writes one `todo_item` op.
-- **History is read-only**: the version tree for a note, drawn git-style from `parent_id`, beside a
-  pane with the selected version's body, plus per-item history for a todo item. Rows carry id, time
+- **History is read-only**: the version tree for a note, drawn git-style from `parent_id`, beside the
+  selected version's body and a line diff of it against its parent (`lib/diff.ts`, one read of the
+  pair), plus per-item history for a todo item. Rows carry id, time
   and state only — no body, no snippet — and a version's body is fetched when it is selected, so a
   long history is one small query. Nothing on this screen writes; restoring means copying text or
   editing it in. Divergence has no UI state: the tree shows the fork, the note view says nothing.

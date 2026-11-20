@@ -44,7 +44,8 @@ Each phase is shippable on its own. Later phases must not force a change to the 
 ## Phase 4: Advanced, unordered
 
 - [ ] observability in acta
-- [x] version tree view: lanes, fork markers, read-only body pane
+- [ ] dashboards
+- [x] version tree view: lanes, fork markers, read-only body pane, diff against the parent
 - [ ] vim mode for the note editor (the editor is behind one component)
 - [ ] quick capture: `…/?q=work buy milk` opens the `work` todo list with a new item appended
 - [ ] tags: derive them from the note body (e.g. `#tag` lines) instead of an input field
@@ -57,7 +58,7 @@ Each phase is shippable on its own. Later phases must not force a change to the 
 - [ ] landing copy: rewrite the feature text and settle the section order
 - [ ] drag and drop for list items: pointer-based with the bullet as the handle, `ordering` and `depth`
       in one `todo_item` op, `⌥↑`/`⌥↓` to move and `⌥→`/`⌥←` to nest
-- [ ] `note_patch` ops and content-addressed chunk dedupe, when snapshot volume hurts
+- [ ] `note_chunked` bodies with content-addressed chunks, once measured storage says so (`design/002`)
 - [ ] `checkpoint` ops for fast fresh-device bootstrap, only if a real account passes ~5k ops
 
 ## Not planned

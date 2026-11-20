@@ -82,7 +82,7 @@ describe('notes', () => {
 
     expect(repo.heads(db, id)).toHaveLength(2);
     expect(repo.getNote(db, id)!.body).toBe('theirs');
-    expect(repo.versions(db, id).map((v) => repo.versionBody(db, id, v.id))).toEqual(['theirs', 'mine']);
+    expect(repo.versions(db, id).map((v) => repo.versionPair(db, id, v.id)?.body)).toEqual(['theirs', 'mine']);
   });
 
   it('ignores a snapshot that loses the lamport race', () => {
@@ -317,6 +317,37 @@ describe('debug reads', () => {
     // The cursor never moves backwards within an account.
     expect(repo.applyRemotePage(db, [], 3, 'acct-a')).toBe(0);
     expect(repo.syncCursor(db, 'acct-a')).toBe(7);
+  });
+
+  it('skips an op kind it does not know, and does not mark it seen', () => {
+    const db = fresh();
+    const noteId = repo.createNote(db, 'note', 'future');
+    const fromTheFuture = {
+      id: 'op-future',
+      device: 'dev-z',
+      kind: 'note_patch',
+      note_id: noteId,
+      lamport: 9,
+      created: 1_700_000_000_000,
+      payload: { note_id: noteId, base_version_id: 'v1', patch: '@@ -1 +1 @@' },
+    } as unknown as Op;
+
+    expect(repo.applyRemotePage(db, [fromTheFuture], 1, 'acct-a')).toBe(0);
+    expect(repo.syncCursor(db, 'acct-a')).toBe(1); // the cursor moved past it, sync is not wedged
+    expect(repo.debugRows(db, 'op_seen').total).toBe(0); // unmarked, so a repair can apply it later
+    expect(repo.listNotes(db, {})).toHaveLength(1); // nothing else disturbed
+  });
+
+  it('returns a version with its parent body, and null for a root', () => {
+    const db = fresh();
+    const id = repo.createNote(db, 'note');
+    repo.saveBody(db, id, 'first');
+    repo.saveBody(db, id, 'second');
+    const [second, first] = repo.versions(db, id);
+
+    expect(repo.versionPair(db, id, second.id)).toEqual({ body: 'second', parentBody: 'first' });
+    expect(repo.versionPair(db, id, first.id)).toEqual({ body: 'first', parentBody: null });
+    expect(repo.versionPair(db, id, 'nope')).toBeUndefined();
   });
 
   it('purges every note and its history, keeping the device and the schema', () => {

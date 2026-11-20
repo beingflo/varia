@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { useRepo } from '../db/context';
 import type { VersionMeta } from '../db/types';
+import { diffLines } from '../lib/diff';
 import { ago } from '../lib/time';
 import { shortId } from '../lib/versions';
 import { versionTree } from '../lib/versionTree';
@@ -25,8 +26,17 @@ export default function History(props: { noteId: string; onClose: () => void }) 
   });
   const current = createMemo(() => tree().rows.find((row) => row.current)?.id);
   const isCurrent = () => selected()?.id === current();
-  /** Bodies are fetched per version: opening history does not ship the note's whole history. */
-  const [body] = createResource(() => selected()?.id, (id) => repo.versionBody(props.noteId, id));
+  /**
+   * Bodies are fetched per version: opening history does not ship the note's whole history. The
+   * parent comes back with it, which is what the diff pane draws against.
+   */
+  const [pair] = createResource(() => selected()?.id, (id) => repo.versionPair(props.noteId, id));
+  const diff = createMemo(() => {
+    const loaded = pair();
+    if (!loaded) return undefined;
+    // A root version has nothing to compare with: every line of it is new.
+    return diffLines(loaded.parentBody ?? '', loaded.body);
+  });
 
   let list: HTMLDivElement | undefined;
 
@@ -161,8 +171,27 @@ export default function History(props: { noteId: string; onClose: () => void }) 
             )}
           </Show>
         </p>
-        <Show when={body()} fallback={<p class="muted small">nothing to show</p>}>
-          {(text) => <pre class="version-body">{text() || '(empty)'}</pre>}
+        <Show when={pair()} fallback={<p class="muted small">nothing to show</p>}>
+          {(loaded) => <pre class="version-body">{loaded().body || '(empty)'}</pre>}
+        </Show>
+      </aside>
+
+      <aside class="version-preview version-diff" aria-label="diff against the parent version">
+        <p class="muted small">vs parent</p>
+        <Show when={diff()} fallback={<p class="muted small">nothing to compare</p>}>
+          {(rows) => (
+            <pre class="version-diff-body">
+              <For each={rows()}>
+                {(row) => (
+                  <span class={`d-${row.kind}`}>
+                    {row.kind === 'equal' ? '  ' : row.kind === 'added' ? '+ ' : '- '}
+                    {row.text || ' '}
+                    {'\n'}
+                  </span>
+                )}
+              </For>
+            </pre>
+          )}
         </Show>
       </aside>
       </div>

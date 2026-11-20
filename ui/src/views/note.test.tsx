@@ -185,10 +185,10 @@ describe('Note view', () => {
     const id = await repo.createNote('note');
     for (let n = 1; n <= 30; n += 1) await repo.saveBody(id, `version ${n}`);
     const seen: string[] = [];
-    const versionBody = repo.versionBody.bind(repo);
-    repo.versionBody = async (noteId, versionId) => {
+    const versionPair = repo.versionPair.bind(repo);
+    repo.versionPair = async (noteId, versionId) => {
       seen.push(versionId);
-      return versionBody(noteId, versionId);
+      return versionPair(noteId, versionId);
     };
     // Freeze the clock out of it: every snapshot here lands in the same millisecond.
     renderWithRepo(() => <NoteView id={id} />, repo);
@@ -320,10 +320,10 @@ describe('Note view', () => {
     const id = await repo.createNote('note');
     for (let n = 1; n <= 30; n += 1) await repo.saveBody(id, `version ${n}`);
     const seen: string[] = [];
-    const versionBody = repo.versionBody.bind(repo);
-    repo.versionBody = async (noteId, versionId) => {
+    const versionPair = repo.versionPair.bind(repo);
+    repo.versionPair = async (noteId, versionId) => {
       seen.push(versionId);
-      return versionBody(noteId, versionId);
+      return versionPair(noteId, versionId);
     };
     // Freeze the clock out of it: every snapshot here lands in the same millisecond.
     renderWithRepo(() => <NoteView id={id} />, repo);

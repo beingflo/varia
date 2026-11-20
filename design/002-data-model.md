@@ -23,8 +23,13 @@ Every op also carries `lamport` and a wall-clock `created` (display only).
 - `note_snapshot` carries a whole compressed body, `parent_version_id` pointing at the version it
   was written from, and is only written when the body differs from that parent.
 - `todo_item` carries only the fields it changes, so a check-off is a few dozen bytes.
-- Future kinds slot in next to these: `note_patch` (diff against a base version), `checkpoint`
-  (materialised state up to a `server_seq`) for fast bootstrap.
+- Future kinds slot in next to these: `note_chunked` (manifest of content-addressed chunks, below)
+  and `checkpoint` (materialised state up to a `server_seq`) for fast bootstrap. Not `note_patch`: a
+  stored diff makes every future reader depend on one diff implementation.
+
+A kind a client does not know is skipped, not an error, and deliberately without an `op_seen` row:
+the pull cursor still advances, so an old client keeps syncing, and the op is applied by the same
+device once it has been upgraded or the log is re-pulled (`repair`).
 
 `lamport` starts at 1 on a new device and is `max(all lamports seen) + 1` for any local change.
 Ties break on device id. It is the only ordering authority; wall clocks are for labels.
@@ -61,8 +66,9 @@ the materialised tables is authoritative: it can be dropped and rebuilt.
 IS NOT NULL)`. One indexed query, no recursion.
 - **Current body** is the head with the highest `(lamport, device)`. With two heads, the lower one
   stays reachable in history and the note view says so.
-- **Reading history writes nothing.** The tree lists ids and times only; a version's body is fetched
-  when it is selected (`versionBody`), so a long history costs one small query, not one body per row.
+- **Reading history writes nothing.** The tree lists ids and times only; a selected version is
+  fetched with the body it was written from (`versionPair`), one small query that feeds both the
+  text and a line diff against its parent — never one body per row.
 - **There is no resolve action.** A second head appears when another device wrote from the same
   version (design/003); the tree shows it, and the user resolves it by editing or by copying text out
   of the preview. No merge op exists, none is planned, and nothing tracks "which branch I have seen":
@@ -83,5 +89,40 @@ that set it, so concurrent check-off and rename do not fight.
 ## Sizes
 
 Whole-body snapshots are the deliberate cost of D3: a 4 KB note edited 30 times a day costs ~45 KB a
-day compressed. Todo ops are ~100 bytes. `note_patch` and content-addressed chunking are the known
-upgrade paths, and both are additive — existing ops never change.
+day compressed on the server, and about twice that on the device — the body is stored both in
+`op.payload` and in `version.body`. Todo ops are ~100 bytes.
+
+### Chunked bodies: decided, not built
+
+Deferred until measured growth says so (`PLAN.md`): months of real use, then the two numbers —
+`navigator.storage.estimate()` locally and "X of Y MB used" in the sync panel.
+
+- A new kind `note_chunked` beside `note_snapshot`, which stays for tiny bodies and whenever the
+  chunked payload is not smaller. Never a payload change to `note_snapshot`: an old client knows that
+  kind, would read `body` as `undefined`, and skipping unknown kinds cannot save it.
+- Payload `{version_id, parent_version_id, chunks[], blobs{hash: text}}`. `chunks` is the complete,
+  ordered manifest of that version's body; `blobs` carries only chunks not already in the parent's
+  manifest. Complete manifest plus sparse blobs is what keeps the log self-describing — any version
+  rebuilds from its own ancestry, so another implementation may skip the store and walk the chain
+  instead. Sending only the changed *slots* would put a reading algorithm back in the code path,
+  which is what rules out `note_patch`.
+- Local materialisation: `chunk(hash, text)` and `version_chunk(version_id, ord, hash)`, both
+  rebuildable; `version.body` retires and `versionBody` becomes one ordered join. The store is an
+  index, not the truth.
+- Wire dedupe reaches no further than the note's own ancestry; the local store still dedupes across
+  all notes, which is where the storage win is. Global wire dedupe saves little and lets one lost op
+  break versions in other notes.
+- Keyframes: every ~20 versions of a note, and at any child of a fork, `blobs` carries the whole
+  manifest, so a hole costs at most 20 versions of one note.
+- The hash is frozen forever (manifests reference it). The chunker is not: a different one costs
+  dedupe, never correctness.
+
+What it cannot do: shrink what the server already holds. The log is append-only and the service
+cannot tell a redundant op from a needed one, so old full-body ops stay and every fresh device
+re-pulls them fat. A device can compact retroactively — rewrite old `op.payload` into manifests,
+dedupe the texts, same op ids, nothing re-pushed — which is why shipping the writer early is worth it.
+Shrinking the server log needs its own decision: a prune with a client-declared watermark (which
+rewrites D6, bootstrap and eviction recovery), or a rebase onto a new account, which is what
+export/import would make safe. Neither is planned.
+
+A diff view needs none of this: it is a function of two bodies, both available today.

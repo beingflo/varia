@@ -12,7 +12,7 @@ export function createHandlers(db: Db): Handlers {
     saveBody: (noteId, body) => repo.saveBody(db, noteId, body),
     setNoteMeta: (noteId, change) => repo.setNoteMeta(db, noteId, change),
     versions: (noteId) => repo.versions(db, noteId),
-    versionBody: (noteId, versionId) => repo.versionBody(db, noteId, versionId),
+    versionPair: (noteId, versionId) => repo.versionPair(db, noteId, versionId),
     heads: (noteId) => repo.heads(db, noteId),
     items: (noteId, showDone) => repo.items(db, noteId, showDone),
     addItem: (noteId, text, itemId, depth, ordering) => repo.addItem(db, noteId, text, itemId, depth, ordering),

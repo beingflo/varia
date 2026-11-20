@@ -1,6 +1,6 @@
 // The one surface views are allowed to touch: no SQL, no connection, just calls.
 import type {
-  Db, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, Version, VersionHead, VersionMeta,
+  Db, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, Version, VersionHead, VersionMeta, VersionPair,
 } from './types';
 
 export type NoteFilter = { tag?: string; q?: string; kind?: NoteKind };
@@ -16,7 +16,7 @@ export interface Handlers {
   saveBody(noteId: string, body: string): boolean;
   setNoteMeta(noteId: string, change: { title?: string; tags?: string[]; deleted?: boolean }): void;
   versions(noteId: string): VersionMeta[];
-  versionBody(noteId: string, versionId: string): string | undefined;
+  versionPair(noteId: string, versionId: string): VersionPair | undefined;
   heads(noteId: string): VersionHead[];
   items(noteId: string, showDone?: boolean): Item[];
   addItem(noteId: string, text: string, itemId?: string, depth?: number, ordering?: number): string;
