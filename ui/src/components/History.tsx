@@ -89,7 +89,6 @@ export default function History(props: { noteId: string; onClose: () => void }) 
         aria-label="versions"
         tabindex="0"
         ref={list}
-        style={{ 'padding-left': `${tree().lanes * LANE + 8}px` }}
       >
         <svg class="tree-graph" width={tree().lanes * LANE} height={tree().rows.length * ROW} aria-hidden="true">
           <For each={tree().edges}>
@@ -131,7 +130,8 @@ export default function History(props: { noteId: string; onClose: () => void }) 
               aria-current={selected()?.id === row.id}
               class="vrow"
               classList={{ selected: selected()?.id === row.id }}
-              style={{ height: `${ROW}px` }}
+              /* The lane gutter is part of the row, so a click anywhere on the line picks it. */
+              style={{ height: `${ROW}px`, 'padding-left': `${tree().lanes * LANE + 8}px` }}
               onClick={() => setPicked(row.id)}
             >
               <span class="vid">{shortId(row.id)}</span>
