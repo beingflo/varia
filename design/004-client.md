@@ -75,9 +75,9 @@ it). Nothing is stored for the view.
   renders as `title — ▦ 3 tiles`. That makes the `dashboard` tag a working index of boards.
 - Todo notes do not appear (their text lives in `todo_item`, so a text render would be empty).
 
-The header is the tag on the left, muted — the entries are what the eye should land on — and, in the
-far corner, how many entries it holds (`3 entries`), small and in full ink: the count answers "is
-this all of it", so it is the one thing up there that should be read. The view has no button.
+The header is the tag's name on the left, in ink and without its `#` — the stream is already the
+tag, so the hash would be a second label for the same thing. In the far corner, how many entries it
+holds (`3 entries`), small. The view has no button.
 
 Writing an entry: `⌘J` (on a phone, the bar's `new entry` then `save`) opens one editable draft at the
 top. The note on disk is the draft's text plus a tag line (`#log` and the stream's tag), written on
