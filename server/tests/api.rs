@@ -216,15 +216,23 @@ async fn pull_reports_more_and_pages_by_cursor() {
 }
 
 #[tokio::test]
-async fn a_full_account_cannot_push_but_can_pull() {
+async fn a_full_account_accepts_a_prefix_and_still_pulls() {
     let app = app_with(Config { cap_bytes: 40, ..Config::default() }); // room for one 28-byte op
     let token = signup(&app, "10.0.0.1").await;
 
-    // The op that fits is kept, the one that does not trips the cap.
+    // The op that fits is kept, the one that does not stays with the client: no error, and the
+    // response says exactly how much of the push the account took.
     let (status, _, body) = send(&app, sync_request(&token, 0, vec![op(0, &payload(1)), op(1, &payload(2))])).await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body["error"], "storage_cap");
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["accepted"], 1);
 
+    // A retried op counts as accepted even though the account is full, so the client can mark
+    // the duplicate as pushed and stop re-sending it.
+    let (status, _, body) = send(&app, sync_request(&token, 1, vec![op(0, &payload(1))])).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["accepted"], 1);
+
+    // A full account always pulls: a device with pending writes must never be split off.
     let (status, _, body) = send(&app, sync_request(&token, 0, vec![])).await;
     assert_eq!(status, StatusCode::OK, "a full account can still pull");
     assert_eq!(body["ops"].as_array().unwrap().len(), 1);

@@ -164,6 +164,11 @@ export default function Sync(props: { onClose: () => void }) {
       <Show when={usage()}>
         <p class="muted small">{usage()}</p>
       </Show>
+      <Show when={sync.status().oversized > 0}>
+        <p class="muted small">
+          {sync.status().oversized} change{sync.status().oversized === 1 ? '' : 's'} too large to sync — split the note or item
+        </p>
+      </Show>
       <button type="button" class="action" disabled={busy()} onClick={() => void attempt(() => sync.run('manual'))}>
         sync now
       </button>

@@ -57,7 +57,14 @@ function tx<T>(db: Db, fn: () => T): T {
 
 // ---------------------------------------------------------------- op log
 
+/** Text compresses to at least ~6 bits per character, so a payload up to this size always stays
+ *  under the server's 4 MB ciphertext limit per op — and an op the server would reject could pin
+ *  the outbox. Rejected at the boundary, not filtered out later. */
+const MAX_OP_PAYLOAD = 4_500_000;
+
 function appendOp(db: Db, kind: OpKind, noteId: string, payload: Record<string, unknown>): Op {
+  const serialized = JSON.stringify(payload);
+  if (serialized.length > MAX_OP_PAYLOAD) throw new Error('this change is too large to sync (over 4 MB)');
   const device = deviceId(db);
   const lamport = Number(meta(db, 'lamport') ?? '0') + 1;
   const created = Date.now();
@@ -69,7 +76,7 @@ function appendOp(db: Db, kind: OpKind, noteId: string, payload: Record<string, 
     device,
     kind,
     noteId,
-    JSON.stringify(payload),
+    serialized,
     lamport,
     created,
   ]);
@@ -102,8 +109,15 @@ export function applyRemoteOp(db: Db, op: Op): boolean {
   if (!KNOWN_KINDS.has(op.kind)) return false;
   const seen = db.get('SELECT 1 FROM op_seen WHERE id = ?', [op.id]);
   if (seen) return false;
+  try {
+    applyOp(db, op);
+  } catch (err) {
+    // shortcut: one op that cannot apply (a snapshot whose note never arrived) must not roll
+    // back the page and pin the cursor; it stays unseen, so a repair retries it once it can
+    console.warn('skipped an op that failed to apply', op.kind, op.note_id, err);
+    return false;
+  }
   db.run('INSERT INTO op_seen(id) VALUES(?)', [op.id]);
-  applyOp(db, op);
   return true;
 }
 
@@ -433,7 +447,9 @@ export function tagsOf(db: Db, noteId: string): string[] {
 export function unpushed(db: Db, limit = 500): Op[] {
   return db
     .all<{ id: string; device: string; kind: OpKind; note_id: string; payload: string; lamport: number; created: number }>(
-      'SELECT * FROM op WHERE pushed = 0 ORDER BY created, rowid LIMIT ?',
+      // Insert order, not wall clock: a clock stepped backwards between a note's meta and its
+      // snapshot must not push the child before its parent (recipients would skip both).
+      'SELECT * FROM op WHERE pushed = 0 ORDER BY rowid LIMIT ?',
       [limit],
     )
     .map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
@@ -492,6 +508,65 @@ export function resetSync(db: Db): void {
     db.run('DELETE FROM op_seen');
     setMetaValue(db, 'cursor', '0');
     setMetaValue(db, 'cursor_account', '');
+    // `sync_account` survives: it says whose history the pulled notes came from, so rejoining
+    // that same account knows the provenance is already up there.
+  });
+}
+
+/**
+ * The outbox holds only this device's own ops, so an op for a note that arrived via pull would
+ * reach a different account without the meta that created it — and a snapshot without its note
+ * would be skipped by every recipient, losing the edit. Before the log is pushed to another
+ * account (`enrol`, `signup`), append the provenance the new account needs: the note's current
+ * meta, its body when no local snapshot carries it, and the current fields of any item the
+ * outbox edits. The fresh lamports make the synthetic ops win on a device that has not seen the
+ * note; the ops they beat are exactly the history they replace.
+ */
+export function adoptForeignNotes(db: Db, target: string): void {
+  tx(db, () => {
+    if (meta(db, 'sync_account') === target) return; // rejoining: the provenance is already there
+    const touched = new Map<string, { meta: boolean; snapshot: boolean; items: Set<string> }>();
+    for (const row of db.all<{ note_id: string; kind: OpKind; payload: string }>(
+      'SELECT note_id, kind, payload FROM op',
+    )) {
+      const entry = touched.get(row.note_id) ?? { meta: false, snapshot: false, items: new Set<string>() };
+      if (row.kind === 'note_meta') entry.meta = true;
+      if (row.kind === 'note_snapshot') entry.snapshot = true;
+      if (row.kind === 'todo_item') {
+        const change = JSON.parse(row.payload) as { item_id?: string };
+        if (change.item_id) entry.items.add(change.item_id);
+      }
+      touched.set(row.note_id, entry);
+    }
+    for (const [noteId, entry] of touched) {
+      if (entry.meta) continue; // this device created the note: its provenance is in the log
+      const note = db.get<Note>('SELECT * FROM note WHERE id = ?', [noteId]);
+      if (!note) continue;
+      appendOp(db, 'note_meta', noteId, {
+        kind: note.kind,
+        title: note.title,
+        tags: tagsOf(db, noteId),
+        deleted: note.deleted === 1,
+      });
+      // Always, even when the outbox carries snapshots of its own: they precede this meta in
+      // push order, so on a fresh device they are skipped for arriving before the note exists.
+      if (note.kind === 'note' && note.body) {
+        appendOp(db, 'note_snapshot', noteId, {
+          version_id: crypto.randomUUID(),
+          parent_version_id: headVersionId(db, noteId),
+          body: note.body,
+        });
+      }
+      for (const itemId of entry.items) {
+        const item = db.get<Item>('SELECT * FROM todo_item WHERE id = ?', [itemId]);
+        if (!item) continue;
+        appendOp(db, 'todo_item', noteId, {
+          item_id: itemId,
+          note_id: noteId,
+          fields: { text: item.text, done: item.done === 1, deleted: item.deleted === 1, depth: item.depth, ordering: item.ordering },
+        });
+      }
+    }
   });
 }
 
@@ -507,6 +582,7 @@ export function purge(db: Db): void {
     }
     setMetaValue(db, 'cursor', '0');
     setMetaValue(db, 'cursor_account', '');
+    setMetaValue(db, 'sync_account', '');
   });
 }
 
@@ -531,6 +607,7 @@ export function applyRemotePage(db: Db, ops: Op[], cursor: number, account: stri
     for (const op of ops) if (applyRemoteOp(db, op)) applied += 1;
     setMetaValue(db, 'cursor', String(Math.max(cursor, syncCursor(db, account))));
     setMetaValue(db, 'cursor_account', account);
+    setMetaValue(db, 'sync_account', account);
     return applied;
   });
 }

@@ -7,7 +7,7 @@ only ciphertext, its job is little more than an ordered log with authentication.
 
 ```
 POST /api/signup   {}                        → {token}
-POST /api/sync     {device, cursor, ops[]}   → {ops[], cursor, more, usage, cap}
+POST /api/sync     {device, cursor, ops[]}   → {ops[], cursor, accepted, more, usage, cap}
 GET  /*                                      → ui/dist (SPA fallback)
 ```
 
@@ -37,7 +37,8 @@ short, one writer connection, a small read pool.
 - Token bucket per token on `/api/sync` (burst 10, refill 30/min) and per IP on `/api/signup` (1/min),
   in memory — a restart empties it, which is fine.
 - Storage cap 500 MB per account, checked at push time against
-  `sum(length(ciphertext))`; over the cap, pushes fail with `403 storage_cap` while pulls keep
+  `sum(length(ciphertext))`; over the cap the push accepts a prefix (duplicates always count as
+  accepted) and the pull still happens — a device with pending writes is never split off; pulls keep
   working so data can always be rescued.
 - Per-op and per-request size ceilings before the body is buffered.
 - TLS only, behind Caddy. The main privacy requirement is the URL: nothing may leak note content into

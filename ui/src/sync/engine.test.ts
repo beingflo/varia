@@ -133,11 +133,12 @@ describe('sync engine', () => {
       transport: async () => Promise.reject(new Error('offline')),
     });
 
-    await engine.enrol(token, keyText); // the enrolment pull is the failing call
+    // Enrolment probes the account before touching anything, so an unreachable service fails
+    // the join: nothing is remembered, nothing is pushed, the outbox is untouched.
+    await expect(engine.enrol(token, keyText)).rejects.toThrow('offline');
 
-    expect(engine.status().state).toBe('error');
-    expect(engine.status().error).toContain('offline');
-    expect(engine.status().pending).toBe(1);
+    expect(engine.enrolled()).toBe(false);
+    expect(engine.status().state).toBe('off');
     expect(await repo.unpushed()).toHaveLength(1);
   });
 

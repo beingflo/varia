@@ -159,10 +159,17 @@ kind (`PLAN.md`).
 overlay in `components/Sync.tsx` is testable against a fake engine.
 
 The view shows only what the engine's status says: `synced now · nothing pending`, `3 pending`,
-`sync failed — 429 rate_limited`, usage against the cap, how old the last sync is, and the enrolment
-token only. The same status is a dot in the bottom-right corner on every screen
+`sync failed — 429 rate_limited`, usage against the cap, how old the last sync is, a count of
+changes too large to travel, and the enrolment token only. The same status is a dot in the
+bottom-right corner on every screen
 (`components/SyncDot.tsx`): green after a good sync, a slow pulse while one runs, a hollow grey ring
-when the last attempt failed, and nothing at all when sync is off. Not enrolled, the panel takes the token and the key in two fields with a filled primary
+when the last attempt failed, and nothing at all when sync is off.
+
+Enrolment validates the key against the account before the first push — a pull probe, and a join
+refused when every sampled op fails to open — because a wrong key would poison the log with
+ciphertext nobody can decrypt. Signup and enrolment also rewind the outbox and adopt the
+provenance of pulled notes, and account switches wait for a sync already in flight; every trigger
+re-reads the keystore, so a switch made in one tab is picked up by the others. Not enrolled, the panel takes the token and the key in two fields with a filled primary
 button under them (`join this device`, disabled until both are pasted; Enter does the same) and,
 below a rule, a separate quiet button for `create a new account` — joining and starting fresh are
 different actions and never share a control. Signup answers with both strings on a screen that says

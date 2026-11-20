@@ -125,6 +125,8 @@ struct SyncResponse {
     cursor: i64,
     /// Highest sequence in the account. Below a client's cursor, that client must rewind.
     head: i64,
+    /// How many of the request's ops the account now holds, in request order.
+    accepted: usize,
     more: bool,
     usage_bytes: i64,
     cap_bytes: i64,
@@ -180,10 +182,11 @@ async fn sync(
         });
     }
 
+    // A full account accepts a prefix of the push — never the whole request — and the pull below
+    // always happens, so a device with pending writes can still receive everything.
     let pushed = state.store.push(&owner, &incoming, state.cfg.cap_bytes)?;
 
-    // Pull what the client is missing. Always allowed, even over the cap: a full account must be
-    // able to rescue its data.
+    // Pull what the client is missing. Always allowed, even over the cap.
     let limit = state.cfg.pull_limit;
     // Do not hand back what this very request just wrote — but only when the client was already
     // caught up before pushing. A client that was behind (two devices writing while offline) has
@@ -218,10 +221,8 @@ async fn sync(
         more,
         usage_bytes: usage,
         cap_bytes: state.cfg.cap_bytes,
+        accepted: pushed.accepted,
     };
-    if pushed.cap_reached {
-        return Err(ApiError::new(StatusCode::FORBIDDEN, "storage_cap"));
-    }
     Ok(Json(response))
 }
 

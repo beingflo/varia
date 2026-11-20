@@ -53,11 +53,13 @@ to order, dedupe and cap.
 
 ```
 POST /api/signup   {}                          → {token}
-POST /api/sync     {device, cursor, ops[]}     → {ops[], cursor, more, usage_bytes, cap_bytes}
+POST /api/sync     {device, cursor, ops[]}     → {ops[], cursor, accepted, more, usage_bytes, cap_bytes}
 ```
 
 `/api/sync` pushes and pulls in one request. Push is best-effort per op: duplicates are ignored,
-ordering is the server's `server_seq`. Pull returns ops with `server_seq > cursor`, at most 2000 ops
+ordering is the server's `server_seq`, and `accepted` says how many of the request's ops (in
+order) the account now holds — a full account accepts a prefix and the rest stay pending on the
+client, never marked pushed. Pull returns ops with `server_seq > cursor`, at most 2000 ops
 or 8 MB, with `more: true` when the client should immediately request again.
 
 A token holder who is not the user can read the envelope metadata (device ids, note ids, kinds,
@@ -67,8 +69,10 @@ delete endpoint — and with a random op id they cannot pre-empt one either. Sig
 per-device key derived from the root would close the waste as well; it is a phase 4 option, not
 something the log needs today.
 
-Errors are boring on purpose: `401` bad token, `413` op or body too large, `429` with `Retry-After`,
-`403` with `{"error": "storage_cap"}` when the account is full. A full account can always pull.
+Errors are boring on purpose: `401` bad token, `413` op or body too large, `429` with `Retry-After`.
+A full account never errors: it accepts the prefix that fits (duplicates always count as
+accepted), and the pull in the same response always happens, so a device with pending writes is
+never split off from the account.
 
 ## Limits
 
@@ -101,10 +105,21 @@ The old account's log stays on the server, unreadable without a key that device 
 ## Implementation notes
 
 - **The outbox is the op log itself.** `op.pushed` is the queue flag, so a push never copies ops
-  anywhere; `markPushed` runs only after the server answered 200. A failed push leaves everything
-  pending, and duplicates on the server make the retry harmless.
-- **An op that cannot be opened is skipped, not retried.** A wrong key or a damaged payload would
-  otherwise pin the cursor forever; `syncNow` counts them in `skipped` and moves on.
+  anywhere; `markPushed` runs only after the server answered, and only for the prefix it says it
+  holds (`accepted`). A failed push leaves everything pending, and duplicates on the server make
+  the retry harmless.
+- **The outbox is pushed in insert order, not wall-clock order.** A clock stepped backwards between
+  a note's meta and its snapshot must not push the child before its parent, or every recipient
+  would skip both.
+- **An op that cannot be opened — or cannot be applied — is skipped, not retried.** A wrong key, a
+  damaged payload or a snapshot whose note never arrived would otherwise pin the cursor forever;
+  `syncNow` counts the unopenable ones in `skipped`, and an unapplicable one stays unseen so a
+  repair retries it once it can.
+- **A change that could never travel is refused at the write, and a legacy one never blocks.**
+  Writes over ~4.5 MB of payload are rejected (text compresses to at least ~6 bits per character,
+  so the ciphertext stays under the 4 MB wire limit), and an oversized op already in the log is
+  counted, left pending and shown, never dropped and never allowed to pin the ops behind it.
+  Pushes are batched by bytes so a request stays under the server's body cap.
 - **A pulled page is decrypted in parallel and applied in one transaction.** Per-op work was the
   whole cost of a replay: one worker round trip, one commit and one view refresh each. Measured on
   Chromium: a page costs ~21 ms of request and ~86 ms of apply per 500 ops, so ~0.2 ms per op; 400
@@ -148,6 +163,15 @@ So the cheap structural rules win: nothing to hash, no full re-pull on the norma
 Linking a device that already has notes is a merge, not an upload: enrolment rewinds the outbox
 (`pushed = 0`, cursor `0`) and clears the pull dedupe, so the whole local log goes up and the whole
 account log comes down. Both devices end with the union, ordered by `(lamport, device)`.
+
+Before the first push, enrolment asks the account for one page and checks the key against a few
+ops: a wrong key would encrypt this device's history into ciphertext nobody can open, and the
+op-id dedupe would keep the garbage forever, so the join is refused instead. Enrolment and signup
+also adopt the provenance of pulled notes the outbox edits — their current meta and body — since
+the outbox holds only this device's own ops and an edit without its note would be skipped by every
+recipient. Account switches (link, unlink, re-pull) wait for a sync already in flight, and every
+trigger re-reads the keystore, so a switch in one tab is picked up by the others and nothing marks
+ops pushed for an account that was just left behind.
 
 - **Distinct notes never conflict.** Note ids are random and minted per device, so two independent
   histories touch disjoint notes. Nothing is overwritten; the account holds both.

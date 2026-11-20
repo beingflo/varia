@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+afterEach(() => vi.restoreAllMocks());
 import { nodeDb } from './nodeSqlite';
 import * as repo from './repo';
 import type { Db, Op } from './types';
@@ -62,6 +64,46 @@ describe('notes', () => {
     expect(repo.saveBody(db, id, 'a')).toBe(true);
     expect(repo.saveBody(db, id, 'a')).toBe(false);
     expect(repo.versions(db, id)).toHaveLength(1);
+  });
+
+  it('refuses a change too large to ever sync, instead of queuing an op the server would reject', () => {
+    const db = fresh();
+    const id = repo.createNote(db, 'note');
+    repo.saveBody(db, id, 'small');
+    expect(() => repo.saveBody(db, id, 'x'.repeat(4_500_001))).toThrow('too large to sync');
+    // Nothing was queued and the note is untouched.
+    expect(repo.saveBody(db, id, 'small')).toBe(false);
+    expect(repo.getNote(db, id)!.body).toBe('small');
+    expect(repo.unpushed(db).map((op) => op.kind)).toEqual(['note_meta', 'note_snapshot']);
+  });
+
+  it('keeps outbox order at insert order, so a clock step back cannot push a child before its parent', () => {
+    const db = fresh();
+    const real = Date.now();
+    const id = repo.createNote(db, 'note'); // meta created = real
+    vi.spyOn(Date, 'now').mockReturnValue(real - 600_000);
+    repo.saveBody(db, id, 'written after the clock stepped back'); // snapshot created = real - 10 min
+    vi.restoreAllMocks();
+    expect(repo.unpushed(db).map((op) => op.kind)).toEqual(['note_meta', 'note_snapshot']);
+  });
+
+  it('skips a remote op that cannot apply instead of failing the whole page', () => {
+    const db = fresh();
+    // A snapshot whose note never arrived: previously this threw and pinned the cursor.
+    expect(() =>
+      remote(db, {
+        device: 'dev-b',
+        id: 'orphan',
+        kind: 'note_snapshot',
+        note_id: 'never-seen',
+        lamport: 1,
+        created: 1,
+        payload: { version_id: 'v', parent_version_id: null, body: 'lost' },
+      }),
+    ).not.toThrow();
+    expect(repo.getNote(db, 'never-seen')).toBeUndefined();
+    // The op stays unseen, so a repair retries it once the note exists.
+    expect(db.get('SELECT 1 FROM op_seen WHERE id = ?', ['orphan'])).toBeUndefined();
   });
 
   it('chains snapshots by parent', () => {

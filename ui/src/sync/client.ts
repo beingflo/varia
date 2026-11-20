@@ -21,6 +21,9 @@ export type SyncResponse = {
   cursor: number;
   /** The account's highest `server_seq`; below our cursor means the server lost ops. */
   head: number;
+  /** How many of the request's ops (in order) the account now holds: a full account accepts a
+   *  prefix, and the rest must stay pending instead of being marked pushed. */
+  accepted?: number;
   more: boolean;
   usage_bytes: number;
   cap_bytes: number;
@@ -32,6 +35,8 @@ export type SyncState = {
   pushed: number;
   pulled: number;
   skipped: number;
+  /** Ops over the wire limit: they never travel and stay pending, but must not block the rest. */
+  oversized: number;
   cursor: number;
   usage: number;
   cap: number;
@@ -43,6 +48,10 @@ export type SyncState = {
 
 /** Round-trip limit per call: `more` comes back when the account has more ops than one page. */
 const MAX_ROUNDS = 5;
+/** The server's per-op limit: an op above it is rejected with the whole request. */
+const MAX_OP_BYTES = 4 * 1024 * 1024;
+/** Batch budget, well under the server's request-size cap. */
+const MAX_BATCH_BYTES = 12 * 1024 * 1024;
 
 export async function syncNow(options: { repo: Repo; key: CryptoKey; token: string; transport: Transport }): Promise<SyncState> {
   const { repo, key, token, transport } = options;
@@ -51,25 +60,45 @@ export async function syncNow(options: { repo: Repo; key: CryptoKey; token: stri
     pushed: 0,
     pulled: 0,
     skipped: 0,
+    oversized: 0,
     cursor: await repo.syncCursor(account),
     usage: 0,
     cap: 0,
     more: false,
     rewound: false,
   };
+  const tooLarge = new Set<string>();
 
   for (let round = 0; round < MAX_ROUNDS; round += 1) {
     const outbox = await repo.unpushed();
-    const ops: WireOp[] = await Promise.all(
+    const sealed = await Promise.all(
       outbox.map(async (op) => ({
-        id: op.id,
-        device: op.device,
-        kind: op.kind,
-        note_id: op.note_id,
-        created: op.created,
-        ciphertext: await seal(key, op),
+        op,
+        wire: {
+          id: op.id,
+          device: op.device,
+          kind: op.kind,
+          note_id: op.note_id,
+          created: op.created,
+          ciphertext: await seal(key, op),
+        } satisfies WireOp,
       })),
     );
+    const sendable: typeof sealed = [];
+    let bytes = 0;
+    for (const entry of sealed) {
+      const size = Math.floor((entry.wire.ciphertext.length * 3) / 4);
+      // An op the server would reject must not pin the rest of the outbox behind it. It stays
+      // pending and is counted, never dropped: the data exists only here and locally.
+      if (size > MAX_OP_BYTES) {
+        tooLarge.add(entry.op.id);
+        continue;
+      }
+      if (bytes + size > MAX_BATCH_BYTES && sendable.length > 0) break; // the next round takes the rest
+      sendable.push(entry);
+      bytes += size;
+    }
+    const ops = sendable.map((entry) => entry.wire);
 
     const response = await transport(token, { device: await repo.deviceId(), cursor: state.cursor, ops });
 
@@ -82,11 +111,13 @@ export async function syncNow(options: { repo: Repo; key: CryptoKey; token: stri
       continue;
     }
 
-    // Only after the server accepted them: a failed push must leave the outbox intact. Duplicates
-    // are ignored server-side, so a second attempt is harmless.
-    if (ops.length > 0) {
-      await repo.markPushed(outbox.map(({ id }) => ({ id })));
-      state.pushed += ops.length;
+    // Mark only what the server says it holds — a full account keeps the rest pending, and a
+    // failed push leaves the outbox intact. Duplicates are ignored server-side, so a retry is
+    // harmless either way.
+    const accepted = Math.min(response.accepted ?? ops.length, ops.length);
+    if (accepted > 0) {
+      await repo.markPushed(sendable.slice(0, accepted).map(({ op }) => ({ id: op.id })));
+      state.pushed += accepted;
     }
 
     // Decrypt in parallel and store the whole page in one worker call: one transaction and one
@@ -107,5 +138,6 @@ export async function syncNow(options: { repo: Repo; key: CryptoKey; token: stri
     if (!response.more) break;
   }
 
+  state.oversized = tooLarge.size;
   return state;
 }

@@ -102,29 +102,38 @@ impl Store {
         let base: i64 =
             tx.query_row("SELECT COALESCE(MAX(server_seq), 0) FROM op WHERE owner = ?", [owner], |row| row.get(0))?;
         let mut stored = 0;
-        let mut cap_reached = false;
+        let mut accepted = 0usize;
         for op in ops {
+            let known: Option<i64> = tx
+                .query_row(
+                    "SELECT server_seq FROM op WHERE owner = ?1 AND op_id = ?2",
+                    params![owner, op.id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if known.is_some() {
+                accepted += 1; // already on the server: it never trips the cap
+                continue;
+            }
             if usage + op.ciphertext.len() as i64 > cap {
-                cap_reached = true;
                 break;
             }
-            let inserted = tx.execute(
+            tx.execute(
                 "INSERT OR IGNORE INTO op(owner, server_seq, op_id, device, kind, note_id, created, ciphertext)
                  VALUES (?1, (SELECT COALESCE(MAX(server_seq), 0) + 1 FROM op WHERE owner = ?1),
                          ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![owner, op.id, op.device, op.kind, op.note_id, op.created, op.ciphertext],
             )?;
-            if inserted == 1 {
-                usage += op.ciphertext.len() as i64;
-                stored += 1;
-            }
+            usage += op.ciphertext.len() as i64;
+            stored += 1;
+            accepted += 1;
         }
         tx.commit()?;
         // Sequences are handed out in insert order, so the highest one this call wrote is base + stored.
         Ok(PushOutcome {
             stored,
+            accepted,
             usage,
-            cap_reached,
             written: if stored > 0 { base + stored as i64 } else { 0 },
             base,
         })
@@ -173,8 +182,10 @@ impl Store {
 
 pub struct PushOutcome {
     pub stored: usize,
+    /// How many of the request's ops (in order) the account now holds: a full account accepts a
+    /// prefix, and the client marks exactly that much as pushed.
+    pub accepted: usize,
     pub usage: i64,
-    pub cap_reached: bool,
     /// Highest sequence this call wrote, so the caller can pull only what it did not just send.
     pub written: i64,
     /// Highest sequence before this call. A client whose cursor is at or above it had seen every

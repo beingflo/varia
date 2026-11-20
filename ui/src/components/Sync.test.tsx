@@ -22,6 +22,7 @@ function fakeEngine(overrides: Partial<Engine> = {}, initial: Partial<SyncStatus
     last: 0,
     usage: 0,
     cap: 0,
+    oversized: 0,
     error: '',
     ...initial,
   });
