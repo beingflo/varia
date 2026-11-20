@@ -55,6 +55,15 @@ export function formatRootKey(root: Uint8Array): string {
   return base32Encode(root);
 }
 
+/**
+ * First three bytes of the token's SHA-256, in hex — the server stores exactly this hash, so its
+ * log line and this panel can be lined up without either side handling the token itself.
+ */
+export async function tokenFingerprint(token: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  return [...new Uint8Array(digest).slice(0, 3)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 export function parseRootKey(text: string): Uint8Array {
   const bytes = base32Decode(text);
   if (bytes.length !== 32) throw new Error('the key must be 32 bytes of base32');

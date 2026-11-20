@@ -1,7 +1,8 @@
 # Sync
 
 The server is an authenticated, ordered, encrypted op log. It has no note tables, no search, no
-migrations of the data model, and no ability to read anything a human wrote.
+migrations of the data model, and no ability to read anything a human wrote. Its own two tables do
+get migrated on open — see `005-service.md`.
 
 ## Accounts
 
@@ -14,6 +15,16 @@ Server tables: `user(id, token_hash, created)`,
 `op(owner, server_seq, op_id, device, kind, note_id, created, ciphertext)` with a unique
 `(owner, op_id)` — that uniqueness is what makes a retried push harmless. The id is random, chosen by
 the client, so nothing can predict one and pre-empt it.
+
+**Enrolment normalises what a phone does to a paste.** The token is lowercase hex; iOS capitalises
+the first character of a paste, share sheets add spaces and newlines, so whitespace is stripped and
+the token lowercased before it is used. Nothing that was ever issued changes meaning under that.
+
+**A 401 says which 401 it was.** `missing_token` means the header never arrived; `unknown_token`
+means this server has no account with that token's hash — a token from another deployment, or a
+database that was recreated. The server logs the hash's first six hex characters and how many
+accounts it holds, and the panel shows the same six characters next to the endpoint it asked, so
+the two logs line up without either side handling the token.
 
 There is no owner column on the client: a local database belongs to one person by definition, and
 attribution only exists once ops reach the server.

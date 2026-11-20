@@ -30,6 +30,13 @@ pub struct StoredOp {
 // One connection behind a mutex: writes are serialised anyway and pulls are small. A read pool
 // would only matter once sync requests queue behind each other.
 // shortcut: single connection for reads and writes, add a pool when pulls block pushes
+/// What a token the server does not know looks like from the inside: a hash prefix (never the token)
+/// and how many accounts the database holds. Zero means a fresh volume, not a forgotten token.
+pub struct UnknownToken {
+    pub hash_prefix: String,
+    pub accounts: i64,
+}
+
 pub struct Store {
     conn: Mutex<Connection>,
 }
@@ -45,6 +52,10 @@ impl Store {
     }
 
     fn init(conn: Connection) -> rusqlite::Result<Self> {
+        // `CREATE TABLE IF NOT EXISTS` is not a migration: a database written by an older build
+        // keeps its old columns, and every query naming a new one then fails per request instead of
+        // at startup. There is nothing to bring forward — the schema has no live data worth keeping
+        // — so a shape this build does not recognise refuses to serve and says so.
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
@@ -67,6 +78,11 @@ impl Store {
                  UNIQUE (owner, op_id)
              );",
         )?;
+        require_columns(
+            &conn,
+            "op",
+            &["owner", "server_seq", "op_id", "device", "kind", "note_id", "created", "ciphertext"],
+        )?;
         Ok(Self { conn: Mutex::new(conn) })
     }
 
@@ -79,6 +95,13 @@ impl Store {
             params![owner, random_hex_of(&token), now()],
         )?;
         Ok(token)
+    }
+
+    pub fn describe_unknown(&self, token: &str) -> rusqlite::Result<UnknownToken> {
+        let hash = random_hex_of(token);
+        let conn = self.conn.lock().expect("store lock");
+        let accounts: i64 = conn.query_row("SELECT count(*) FROM user", [], |row| row.get(0))?;
+        Ok(UnknownToken { hash_prefix: hash[..6.min(hash.len())].to_owned(), accounts })
     }
 
     pub fn owner_for(&self, token: &str) -> rusqlite::Result<Option<String>> {
@@ -118,12 +141,17 @@ impl Store {
             if usage + op.ciphertext.len() as i64 > cap {
                 break;
             }
-            tx.execute(
+            let inserted = tx.execute(
                 "INSERT OR IGNORE INTO op(owner, server_seq, op_id, device, kind, note_id, created, ciphertext)
                  VALUES (?1, (SELECT COALESCE(MAX(server_seq), 0) + 1 FROM op WHERE owner = ?1),
                          ?2, ?3, ?4, ?5, ?6, ?7)",
                 params![owner, op.id, op.device, op.kind, op.note_id, op.created, op.ciphertext],
             )?;
+            // A row the table refused (a stale constraint, a migrated schema) must not be counted
+            // as stored: the client would mark it pushed and lose it.
+            if inserted == 0 {
+                break;
+            }
             usage += op.ciphertext.len() as i64;
             stored += 1;
             accepted += 1;
@@ -197,6 +225,24 @@ pub fn now() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
+fn columns(conn: &Connection, table: &str) -> rusqlite::Result<Vec<String>> {
+    let mut statement = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let rows = statement.query_map([], |row| row.get::<_, String>(1))?;
+    rows.collect()
+}
+
+fn require_columns(conn: &Connection, table: &str, required: &[&str]) -> rusqlite::Result<()> {
+    let present = columns(conn, table)?;
+    let missing: Vec<&str> = required.iter().copied().filter(|name| !present.iter().any(|c| c == name)).collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(rusqlite::Error::InvalidParameterName(format!(
+        "table {table} is missing {missing:?} — this database was written by another build; \
+         delete it (the log is rebuildable from any device) and start a new one",
+    )))
+}
+
 /// Hex, not base64: the token is compared by exact string in one column, and hex has no padding.
 pub fn random_hex(bytes: usize) -> String {
     let mut buf = vec![0u8; bytes];
@@ -206,4 +252,31 @@ pub fn random_hex(bytes: usize) -> String {
 
 fn random_hex_of(secret: &str) -> String {
     Sha256::digest(secret.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_older_shape_is_refused_at_startup_rather_than_failing_every_request() {
+        // The table this service wrote before ops had ids of their own.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE user(id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, created INTEGER NOT NULL);
+             CREATE TABLE op(
+                 owner TEXT NOT NULL, server_seq INTEGER NOT NULL, device TEXT NOT NULL,
+                 seq INTEGER NOT NULL, kind TEXT NOT NULL, note_id TEXT NOT NULL,
+                 created INTEGER NOT NULL, ciphertext BLOB NOT NULL,
+                 PRIMARY KEY (owner, server_seq), UNIQUE (owner, device, seq)
+             );",
+        )
+        .unwrap();
+        let err = match Store::init(conn) {
+            Ok(_) => panic!("an unknown shape must not be served"),
+            Err(err) => err.to_string(),
+        };
+        assert!(err.contains("op_id"), "{err}");
+        assert!(err.contains("another build"), "{err}");
+    }
 }

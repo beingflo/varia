@@ -9,6 +9,8 @@ import { accountTag, opKey, parseRootKey, seal } from './crypto';
 import { syncNow } from './client';
 import { auditServer, freshAccount, heldTransport, memoryStore, testRepoWithDb, waitFor } from './testing';
 import { createEngine } from './engine';
+import { SyncError } from './http';
+import { tokenFingerprint } from './crypto';
 
 describe('guarantees', () => {
   afterEach(() => {
@@ -394,5 +396,31 @@ describe('guarantees', () => {
       transport: server.transport,
     });
     expect((await repoC.getNote(id))?.body).toContain('the only server copy');
+  });
+
+  it('enrols with a token a phone mangled, and says which 401 it was when the server refuses', async () => {
+    // A realistic token: 64 lowercase hex characters.
+    const account = await freshAccount('3f'.repeat(32));
+    const seen: string[] = [];
+    const engine = createEngine({
+      repo: testRepo('pwa'),
+      store: memoryStore(),
+      transport: async (token) => {
+        seen.push(token);
+        throw new SyncError(401, 'unknown_token');
+      },
+    });
+
+    // iOS capitalises the first character; a share sheet adds spaces and a newline.
+    const pasted = ` ${account.token.toUpperCase()}\n`;
+    await expect(engine.enrol(pasted, account.keyText)).rejects.toThrow(
+      `the server does not know this token (unknown_token)`,
+    );
+    // The token the server saw is the one that was generated, not the one that was pasted.
+    expect(seen[0]).toBe(account.token);
+    const message = await engine.enrol(pasted, account.keyText).catch((err: Error) => err.message);
+    // The fingerprint is the same six hex characters the server logs, and nothing revealing.
+    expect(message).toContain(await tokenFingerprint(account.token));
+    expect(message).not.toContain(account.token);
   });
 });

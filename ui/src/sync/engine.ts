@@ -3,7 +3,7 @@
 import { createSignal } from 'solid-js';
 import type { Repo } from '../db/api';
 import { flushAll } from '../lib/flush';
-import { accountTag, formatRootKey, newRootKey, opKey, openSealed, parseRootKey } from './crypto';
+import { accountTag, formatRootKey, newRootKey, opKey, openSealed, parseRootKey, tokenFingerprint } from './crypto';
 import { syncNow } from './client';
 import { httpTransport, SyncError } from './http';
 import type { Account, AccountStore } from './keystore';
@@ -34,6 +34,8 @@ export function createEngine(options: {
 }) {
   const { repo, store } = options;
   const base = options.base ?? '';
+  /** The server this window talks to: the first thing to check when a token is not recognised. */
+  const endpoint = () => `${typeof location === 'undefined' ? '' : location.origin}${base}`;
   const transport = options.transport ?? httpTransport(base);
   const [status, setStatus] = createSignal<SyncStatus>({
     state: 'off', pending: 0, last: 0, usage: 0, cap: 0, oversized: 0, error: '',
@@ -160,10 +162,28 @@ export function createEngine(options: {
   /** Joins an existing account from its code. The first pull starts at cursor 0: the whole log. */
   async function enrol(token: string, key: string): Promise<void> {
     await idle(); // a sync in flight belongs to the account being left
-    const candidate: Account = { token: token.trim(), key: await opKey(parseRootKey(key)) };
+    // A pasted token picks up whatever a phone's keyboard and share sheet do to it: iOS
+    // capitalises the first character, a paste can carry spaces or a newline. Tokens are
+    // lowercase hex, so normalising cannot change which account is meant.
+    const normalised = token.replace(/\s+/g, '').toLowerCase();
+    const candidate: Account = { token: normalised, key: await opKey(parseRootKey(key)) };
     // A wrong key would encrypt this device's whole history into ciphertext nobody can open — and
     // the op-id dedupe on the server would keep the garbage forever. Ask the account first.
-    const probe = await transport(candidate.token, { device: await repo.deviceId(), cursor: 0, ops: [] });
+    let probe;
+    try {
+      probe = await transport(candidate.token, { device: await repo.deviceId(), cursor: 0, ops: [] });
+    } catch (err) {
+      if (err instanceof SyncError && err.status === 401) {
+        // Six hex characters that also appear in the server's log, and nothing else about the token.
+        const fingerprint = await tokenFingerprint(normalised);
+        throw new Error(
+          `the server does not know this token (${err.code}). Token ${fingerprint} ` +
+            `(${normalised.length} characters) at ${endpoint()} — it belongs to another server, ` +
+            'or that account no longer exists there.',
+        );
+      }
+      throw err;
+    }
     if (probe.ops.length > 0) {
       const sample = probe.ops.slice(0, 8); // a wrong key fails every op, so a few are enough
       const opened = await Promise.allSettled(sample.map((wire) => openSealed(candidate.key, wire.ciphertext)));
@@ -250,5 +270,7 @@ export function createEngine(options: {
     listeners.splice(0).forEach((off) => off());
   }
 
-  return { status, enrolled, token: accountToken, start, stop, run, signup, enrol, unlink, repair, refreshPending };
+  return {
+    status, enrolled, token: accountToken, endpoint, start, stop, run, signup, enrol, unlink, repair, refreshPending,
+  };
 }

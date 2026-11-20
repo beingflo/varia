@@ -32,6 +32,7 @@ function fakeEngine(overrides: Partial<Engine> = {}, initial: Partial<SyncStatus
     status,
     enrolled,
     token,
+    endpoint: () => 'https://varia.example',
     start: vi.fn(),
     stop: vi.fn(),
     run: vi.fn(async () => setStatus({ ...status(), state: 'idle', last: Date.now() })),

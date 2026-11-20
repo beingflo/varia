@@ -25,9 +25,16 @@ op(owner, server_seq INTEGER PK, op_id, device, kind, note_id, created, cipherte
 
 `server_seq` is a per-owner monotonic counter assigned on insert; pulling is `WHERE owner = ? AND
 server_seq > ? ORDER BY server_seq LIMIT 500`. Every response also reports `head`, the owner's
-highest `server_seq`, so a client can notice that the log is shorter than what it already pulled. The unique key makes retries idempotent. Migrations
-only ever create or add indexes here — the note schema lives in the client, which is what keeps the
+highest `server_seq`, so a client can notice that the log is shorter than what it already pulled. The
+unique key makes retries idempotent. The note schema lives in the client, which is what keeps the
 server cheap to operate.
+
+**It does not migrate, it refuses.** `CREATE TABLE IF NOT EXISTS` is not a migration: a database
+written by an older build keeps its old columns, and every query naming a new one then fails per
+request. There is nothing worth carrying across — the log is rebuildable from any device — so a
+shape this build does not recognise fails the **start**, naming the missing column, instead of
+500-ing every sync forever. Resetting a deployment is deleting the volume (see Operations). A push
+the table refuses is also not counted as accepted: the client would mark it pushed and lose it.
 
 `rusqlite` with the `bundled` feature (it needs no FTS5: search is client-side). WAL, short
 statement timeouts, one connection behind a mutex for reads and writes — pulls are small enough
@@ -61,6 +68,11 @@ The app shell must be served with `Cross-Origin-Opener-Policy: same-origin`,
 VFS spawns without it, while Chrome happens to allow it. `/api/*` responses need none of this.
 
 ## Operations
+
+Resetting the server is `systemctl --user stop varia`, `podman volume rm varia-data`, start again:
+the volume and the schema are recreated empty. Each device then needs **unlink this device** before
+signing up again — a device whose ops are all marked pushed would otherwise never send them, and its
+history would stop at the new account.
 
 A container running under Podman/Quadlet, Caddy terminating TLS and proxying to the container's
 loopback port, the SQLite file on a named volume.

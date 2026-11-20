@@ -113,12 +113,17 @@ export default function Sync(props: { onClose: () => void }) {
   const enrolForm = () => (
     <>
       <p class="muted small">sync is off. Paste the token and the key of an existing account:</p>
+      {/* Which server this window asks: a token from another deployment is the usual reason for a 401. */}
+      <p class="muted small">server: {sync.endpoint()}</p>
       <input
         ref={field}
         class="search"
         aria-label="account token"
         autocomplete="off"
         spellcheck={false}
+        // A phone keyboard would otherwise capitalise the first character of the paste.
+        autocapitalize="off"
+        autocorrect="off"
         placeholder="token"
         value={token()}
         onInput={(e) => setToken(e.currentTarget.value)}
@@ -131,6 +136,8 @@ export default function Sync(props: { onClose: () => void }) {
         aria-label="account key"
         autocomplete="off"
         spellcheck={false}
+        autocapitalize="off"
+        autocorrect="off"
         placeholder="key"
         value={key()}
         onInput={(e) => setKey(e.currentTarget.value)}

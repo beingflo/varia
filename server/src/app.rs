@@ -156,7 +156,20 @@ async fn sync(
     if let Err(wait) = state.sync.check(&token) {
         return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "rate_limited").retry_after(wait));
     }
-    let owner = state.store.owner_for(&token)?.ok_or_else(|| ApiError::unauthorized())?;
+    let owner = match state.store.owner_for(&token)? {
+        Some(owner) => owner,
+        None => {
+            // Which 401 this is decides what to do next: a mistyped token, a token from another
+            // server, or a database that was recreated. The hash prefix matches what the client
+            // panel shows, so the two logs can be lined up without either side seeing the token.
+            let unknown = state.store.describe_unknown(&token)?;
+            eprintln!(
+                "unknown token {}…: {} account(s) on this server",
+                unknown.hash_prefix, unknown.accounts
+            );
+            return Err(ApiError::new(StatusCode::UNAUTHORIZED, "unknown_token"));
+        }
+    };
     if request.ops.len() > state.cfg.max_ops {
         return Err(ApiError::new(StatusCode::BAD_REQUEST, "too_many_ops"));
     }
@@ -246,7 +259,7 @@ fn bearer(headers: &HeaderMap) -> Result<String, ApiError> {
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
         .map(str::to_owned)
-        .ok_or_else(ApiError::unauthorized)
+        .ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "missing_token"))
 }
 
 /// Rate limiting key. The service is published on loopback behind Caddy, which sets the header, so
@@ -275,9 +288,6 @@ impl ApiError {
         Self { status, code, retry_after: None }
     }
 
-    fn unauthorized() -> Self {
-        Self::new(StatusCode::UNAUTHORIZED, "unauthorized")
-    }
 
     fn retry_after(mut self, seconds: u64) -> Self {
         self.retry_after = Some(seconds.max(1));
