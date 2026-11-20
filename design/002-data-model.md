@@ -58,6 +58,15 @@ tag(name), note_tag(note_id, name)
 Every local change writes the op and updates the materialised rows in one transaction. Nothing in
 the materialised tables is authoritative: it can be dropped and rebuilt.
 
+**Migrations are append-only steps, and `migration1` is frozen.** It was edited in place once (ops
+keyed by `(device, seq)` became ops keyed by `id`), which left every database created before that
+change in the old shape: `CREATE TABLE IF NOT EXISTS` has nothing to do, so writes failed with
+`table op has no column named id` for ever, and purging did not help because a purge deletes rows,
+not tables. `migration5` repairs those databases by rebuilding `op`, `todo_item_op` and `op_seen`
+with the derived ids `device-seq`, keeping the `pushed` flags. Real changes to a shipped shape go in
+a new step — step functions may inspect `PRAGMA table_info`, and `migrate` runs them inside the same
+transaction it bumps `user_version` in.
+
 ### Tags
 
 A tag is body text, never an op of its own: the last line of a body, and only when that line is

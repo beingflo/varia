@@ -278,7 +278,8 @@ creating a new account uploads the entire local history to the new one.
 allowed to land, then flushing is sealed off, the account is forgotten, and every table but `meta`
 is emptied — the device id stays, so this is the same installation, emptied. The page reloads into a
 draft. The server's log is untouched, so signing in again brings every note back: it wipes the
-device, not the account.
+device, not the account. It deletes **rows, not the schema**: a database whose tables came from an
+older build stays old-shaped, which is what `migration5` (`002-data-model.md`) repairs on open.
 
 ## PWA
 
