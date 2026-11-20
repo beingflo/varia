@@ -7,6 +7,7 @@ export function createHandlers(db: Db): Handlers {
   return {
     deviceId: () => repo.deviceId(db),
     listNotes: (filter) => repo.listNotes(db, filter),
+    countNotes: (filter) => repo.countNotes(db, filter),
     getNote: (id) => repo.getNote(db, id),
     createNote: (kind, title) => repo.createNote(db, kind, title),
     saveBody: (noteId, body) => repo.saveBody(db, noteId, body),

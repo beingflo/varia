@@ -6,6 +6,7 @@ export type Command =
   | 'new-note'
   | 'new-list'
   | 'new-dashboard'
+  | 'new-entry'
   | 'delete'
   | 'save'
   | 'history'
@@ -36,7 +37,15 @@ export function runCommand(command: Command): void {
   // Every view with unsaved state has registered a flush, so saving is one broadcast rather than
   // a handler each: a dashboard has several views on screen and no single one to pick.
   if (command === 'save') {
-    void flushAll();
+    // Views that react to a *finished* save (a journal's draft closes once it is on disk) run
+    // after the flush, not before: a background flush must not count as "saved" for them.
+    void flushAll().then(() => {
+      try {
+        handlers.get('save')?.();
+      } catch (err) {
+        console.error('command save failed', err);
+      }
+    });
     return;
   }
   try {
@@ -78,6 +87,14 @@ export const BINDINGS: { command: Command; label: string; chords: Chord[] }[] = 
     chords: [
       { key: 'b', mods: ['mod', 'shift'] },
       { key: 'b', mods: ['mod', 'alt'] },
+    ],
+  },
+  {
+    command: 'new-entry',
+    label: 'new entry',
+    chords: [
+      { key: 'j', mods: ['mod'] },
+      { key: 'j', mods: ['mod', 'alt'] },
     ],
   },
   {

@@ -426,3 +426,65 @@ describe('debug reads', () => {
     expect(() => repo.debugRows(db, 'sqlite_master')).toThrow(/unknown table/);
   });
 });
+
+describe('tags are an index over the body', () => {
+  it('derives the last line into note_tag on save, and drops it again when it goes', () => {
+    const db = fresh();
+    const id = repo.createNote(db, 'note');
+    repo.saveBody(db, id, 'entry\n\n#work #urgent');
+    expect(repo.tagsOf(db, id)).toEqual(['urgent', 'work']);
+    expect(repo.tags(db)).toEqual(['urgent', 'work']);
+
+    repo.saveBody(db, id, 'entry, untagged');
+    expect(repo.tagsOf(db, id)).toEqual([]);
+  });
+
+  it('does not read a heading or a sentence ending in a tag', () => {
+    const db = fresh();
+    const id = repo.createNote(db, 'note');
+    repo.saveBody(db, id, '#work is not a title tag');
+    expect(repo.tagsOf(db, id)).toEqual([]);
+    repo.saveBody(db, id, 'see #work\nnext line');
+    expect(repo.tagsOf(db, id)).toEqual([]);
+  });
+
+  it('derives a pulled snapshot too, not just a local save', () => {
+    const db = fresh();
+    repo.applyRemoteOp(db, {
+      device: 'dev-b', id: 'op-meta', kind: 'note_meta', note_id: 'n1', lamport: 1, created: 1,
+      payload: { kind: 'note', title: 'pulled', tags: [], deleted: false },
+    } as Op);
+    snapshot(db, 'n1', 'pulled entry\n\n#log #work', 2);
+    expect(repo.tagsOf(db, 'n1')).toEqual(['log', 'work']);
+  });
+
+  it('backfills notes that were on disk before tags were indexed', () => {
+    const db = fresh();
+    const id = repo.createNote(db, 'note');
+    repo.saveBody(db, id, 'old entry\n\n#work');
+    // Simulate the world before the index: rows written, flag unset, note_tag empty.
+    db.run('DELETE FROM note_tag');
+    db.run('DELETE FROM tag');
+    db.run('DELETE FROM meta WHERE key = ?', ['tags_indexed']);
+    repo.openDb(db, 'dev-a');
+    expect(repo.tagsOf(db, id)).toEqual(['work']);
+  });
+
+  it('filters by tag, by exclusion and by kind, and can sort by creation', () => {
+    const db = fresh();
+    const log = repo.createNote(db, 'note');
+    repo.saveBody(db, log, 'journal\n\n#log #work');
+    const note = repo.createNote(db, 'note');
+    repo.saveBody(db, note, 'a real note\n\n#work');
+    const list = repo.createNote(db, 'todo');
+
+    // Same millisecond for all three: the order is the tiebreak, so compare as a set.
+    const work = repo.listNotes(db, { tag: 'work', kind: 'note', sort: 'created' }).map((n) => n.id).sort();
+    expect(work).toEqual([note, log].sort());
+    const withoutLog = repo.listNotes(db, { excludeTag: 'log' }).map((n) => n.id);
+    expect(withoutLog).toContain(note);
+    expect(withoutLog).not.toContain(log);
+    expect(repo.listNotes(db, { tag: 'log', limit: 1 }).map((n) => n.id)).toEqual([log]);
+    expect(repo.listNotes(db, { sort: 'created' }).map((n) => n.id)).toContain(list);
+  });
+});

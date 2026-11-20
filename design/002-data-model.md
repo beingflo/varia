@@ -58,6 +58,22 @@ tag(name), note_tag(note_id, name)
 Every local change writes the op and updates the materialised rows in one transaction. Nothing in
 the materialised tables is authoritative: it can be dropped and rebuilt.
 
+### Tags
+
+A tag is body text, never an op of its own: the last line of a body, and only when that line is
+nothing but tags (`#work #urgent`) names them. `note_tag` is an **index over the body**, written by
+both paths that write one — a local `note_snapshot` and a pulled one — so a note re-derives the same
+way whichever device wrote it, and deleting the line is untagging. `tag` is the name table the
+palette lists.
+
+`#dashboard` is indexed like any other tag; nothing is special about it in the data model, only in
+how a client chooses to render the note. Bodies written before the index existed are scanned once on
+open, flagged in `meta(tags_indexed)`.
+
+`note_meta` still carries a `tags[]` field and its replay writes `note_tag` too. Nothing on the
+client sets it any more: it is the shape an older peer sends, and the next body snapshot of that
+note overwrites it with what the body says.
+
 ## Note history
 
 `version.parent_id` makes the history of a note a tree.

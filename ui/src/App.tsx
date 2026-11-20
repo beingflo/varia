@@ -13,11 +13,13 @@ import { createEngine } from './sync/engine';
 import { SyncProvider } from './sync/context';
 import { idbAccount } from './sync/keystore';
 import Dashboard from './views/Dashboard';
+import TagView from './views/TagView';
 import NoteList from './views/NoteList';
 import NoteView from './views/NoteView';
 import TodoView from './views/TodoView';
 
-type Open = { kind: 'note' | 'todo' | 'dashboard'; id?: string };
+// `tag` is not a note kind: it is a stream over the notes carrying a tag, so it has no id.
+type Open = { kind: 'note' | 'todo' | 'dashboard' | 'tag'; id?: string; tag?: string };
 
 /** A board is a note that says so in its body: no note type of its own (design/002). */
 const kindOf = (note: Note): Open['kind'] =>
@@ -28,18 +30,22 @@ export default function App() {
   const repo = useRepo();
   // Deep links are paths (/note/<id>): the host must serve index.html for them (an spa fallback).
   const linkedId = location.pathname.match(/\/note\/([\w-]+)/)?.[1] ?? null;
+  const linkedTag = location.pathname.match(/\/tag\/([^/?#]+)/)?.[1] ?? null;
   const engine = createEngine({ repo, store: idbAccount });
   const [open, setOpen] = createSignal<Open>({ kind: 'note' });
   const [syncOpen, setSyncOpen] = createSignal(false);
-  const [linked, setLinked] = createSignal(linkedId === null);
+  const [linked, setLinked] = createSignal(linkedId === null && linkedTag === null);
   const [listOpen, setListOpen] = createSignal(false);
 
-  // The open note is in the url, so a reload or a bookmark lands on the same note.
+  // The open view is in the url, so a reload or a bookmark lands on the same place.
   createEffect(() => {
-    const id = open().id;
-    if (!id && !linked()) return; // the note in the url is still being looked up
+    const current = open();
+    const base = import.meta.env.BASE_URL;
+    if (!current.id && !current.tag && !linked()) return; // the url is still being looked up
+    const path = current.tag ? `${base}tag/${current.tag}` : current.id ? `${base}note/${current.id}` : base;
     const url = new URL(location.href);
-    url.pathname = id ? `${import.meta.env.BASE_URL}note/${id}` : import.meta.env.BASE_URL;
+    if (url.pathname === path) return;
+    url.pathname = path;
     history.replaceState(null, '', url);
   });
 
@@ -56,6 +62,7 @@ export default function App() {
     void (async () => {
       const note = linkedId ? await repo.getNote(linkedId) : undefined;
       if (note) setOpen({ kind: kindOf(note), id: note.id });
+      else if (linkedTag) setOpen({ kind: 'tag', tag: decodeURIComponent(linkedTag) });
       setLinked(true); // a url naming a deleted or unknown note falls back to the draft
     })();
 
@@ -108,22 +115,36 @@ export default function App() {
     onCleanup(() => off.forEach((unregister) => unregister()));
   });
 
+  const openTag = async (tag: string) => {
+    await flushAll(); // the note being left is saved before its tag stream is built
+    setListOpen(false);
+    setOpen({ kind: 'tag', tag });
+  };
+
   return (
     <SyncProvider engine={engine}>
       <Switch>
         <Match when={open().kind === 'dashboard'}>
           <Dashboard id={open().id ?? ''} onOpen={(note) => setOpen({ kind: kindOf(note), id: note.id })} />
         </Match>
+        <Match when={open().kind === 'tag'}>
+          <TagView tag={open().tag ?? ''} onOpen={(note) => setOpen({ kind: kindOf(note), id: note.id })} />
+        </Match>
         <Match when={open().kind === 'todo'}>
           <TodoView id={open().id} onCreated={(id) => setOpen({ kind: 'todo', id })} />
         </Match>
         <Match when={true}>
-          <NoteView id={open().id} onCreated={(id) => setOpen({ kind: 'note', id })} />
+          <NoteView
+            id={open().id}
+            onCreated={(id) => setOpen({ kind: 'note', id })}
+            onTag={(tag) => void openTag(tag)}
+          />
         </Match>
       </Switch>
       <Show when={listOpen()}>
         <NoteList
           currentId={open().id}
+          onTag={(tag) => void openTag(tag)}
           onClose={() => {
             setListOpen(false);
             focusEditor();

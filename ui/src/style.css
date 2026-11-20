@@ -274,6 +274,44 @@ input[type='search']::-webkit-search-cancel-button { display: none; }
 .tile .editor { max-width: none; margin-inline: 0; min-height: 4rem; }
 .tile .card { max-width: none; margin-inline: 0; min-height: 0; }
 
+/* A tag stream: the entries are the page, so nothing frames them. The timestamp is a right rail on
+   a wide screen and a line above the entry where the rail would eat a quarter of the text. */
+.tag-page {
+  /* The reading measure plus the timestamp rail: a stream is read, so it keeps the column the
+     editor has instead of running the width of the screen. */
+  width: 100%; max-width: calc(var(--measure) + 11rem); margin-inline: auto;
+  min-height: 100dvh; padding: 1.25rem clamp(1rem, 2vw, 2rem) 2rem;
+  /* Entries are skimmed, not read line by line: the gaps are wider than a paragraph's. */
+  display: flex; flex-direction: column; gap: clamp(2.5rem, 4.5vw, 4.5rem);
+}
+.tag-head { display: flex; align-items: baseline; gap: 1rem; }
+.tag-head h1 { margin: 0; flex: 1; min-width: 0; font-size: 1.4rem; font-weight: 600; }
+.tag-more { flex: none; font-size: 0.8rem; color: var(--ink); padding: 0.3rem 0.6rem; }
+.tag-more:hover { text-decoration: underline; text-underline-offset: 3px; }
+.tag-more { align-self: flex-start; color: var(--muted); }
+.tag-draft { display: flex; min-height: 4rem; }
+.tag-draft .tile-note { flex: 1; }
+/* A draft is an entry being typed, not a page: the page's 12rem of empty editor would push the
+   stream it belongs to off the screen. */
+.tag-draft .editor { min-height: 4rem; max-width: none; margin-inline: 0; }
+.tag-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1.5rem; align-items: start; }
+.tag-text { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.5em; }
+.tag-when { font-size: 0.8rem; color: var(--muted); white-space: nowrap; text-decoration: none; }
+.tag-when:hover { text-decoration: underline; text-underline-offset: 3px; }
+/* The note's tags, read-only: they are a line in the body, this is a shortcut to the stream. */
+.tag-chips { list-style: none; display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 auto 1rem; padding: 0; width: 100%; max-width: var(--measure); }
+.tag-chips a { font-size: 0.8rem; color: var(--muted); text-decoration: none; }
+.tag-chips a:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 60rem) {
+  /* No room for a rail: the time moves above its entry. */
+  .tag-entry { grid-template-columns: minmax(0, 1fr); gap: 0.35rem; }
+  .tag-when { grid-row: 1; }
+  .tag-text { grid-row: 2; }
+}
+/* Palette sections: a label, not a heading that shouts over the rows. */
+.row-head { margin: 1rem 0 0.25rem; font-size: 0.75rem; font-weight: 400; color: var(--muted); }
+.row-head .small { margin-left: 0.4rem; }
+
 .muted { color: var(--muted); }
 .small { font-size: 0.8rem; }
 /* The enrolment code: one long string, read out loud or copied, so it wraps instead of scrolling. */
@@ -315,6 +353,7 @@ input[type='search']::-webkit-search-cancel-button { display: none; }
   .overlay { padding-top: calc(1.5rem + env(safe-area-inset-top)); }
   .overlay.history { padding-top: calc(1.25rem + env(safe-area-inset-top)); }
   .board { padding-top: calc(4.5rem + env(safe-area-inset-top)); --board-chrome: calc(10rem + env(safe-area-inset-top)); }
+  .tag-page { padding-top: calc(4.5rem + env(safe-area-inset-top)); }
   /* A finger has no hover: the tile controls are always there. */
   .tile-controls { opacity: 1; }
   .mobile-bar {

@@ -50,8 +50,12 @@ Each phase is shippable on its own. Later phases must not force a change to the 
 - [x] version tree view: lanes, fork markers, read-only body pane, diff against the parent
 - [ ] vim mode for the note editor (the editor is behind one component)
 - [ ] quick capture: `…/?q=work buy milk` opens the `work` todo list with a new item appended
-- [ ] tags: derive them from the note body (e.g. `#tag` lines) instead of an input field
-- [ ] tag timeline: all notes under a tag as one time-ordered stream
+- [x] tags: the last line of a body names them (`#work #urgent`, nothing else on the line), derived
+      into `note_tag` on every body write on every device, backfilled once for older notes; the note
+      list hides `log`, search has tags/notes/logs sections, a note shows its tags as chips
+      (`design/002`)
+- [x] tag stream: `/tag/<name>` lists the notes under a tag newest first, whole bodies, a timestamp
+      rail, `⌘J` files an entry tagged `#log` plus the stream's tag (`design/004`)
 - [ ] export: zip of `*.md`, todo JSON and the raw op log; import that restores an account
 - [ ] warn when changes have been unsynced for days
 - [ ] token revocation and multiple tokens per account

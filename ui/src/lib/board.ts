@@ -1,4 +1,4 @@
-import { titleFromBody } from '../db/ops';
+import { tagsOfLastLine, titleFromBody } from '../db/ops';
 
 /**
  * A dashboard is an ordinary note (design/002): its last line names the tag `dashboard`, its first
@@ -14,17 +14,7 @@ const MIN = 1;
 const MAX_W = 3;
 const MAX_H = 3;
 
-const lastLine = (body: string) => body.split('\n').map((line) => line.trim()).filter(Boolean).at(-1) ?? '';
-
-/**
- * Tags named by the last line, and only when that line is nothing but tags: `#work #urgent`. A
- * heading or a sentence ending in a tag is not a tag line, so a note cannot claim a tag by accident.
- */
-export function tagsOfLastLine(body: string): string[] {
-  const tokens = lastLine(body).split(/\s+/).filter(Boolean);
-  if (!tokens.length || !tokens.every((token) => /^#[\p{L}\p{N}_-]+$/u.test(token))) return [];
-  return tokens.map((token) => token.slice(1));
-}
+export { tagsOfLastLine };
 
 export const isDashboard = (body: string): boolean => tagsOfLastLine(body).includes(TAG);
 

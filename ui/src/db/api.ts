@@ -3,7 +3,15 @@ import type {
   Db, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, Version, VersionHead, VersionMeta, VersionPair,
 } from './types';
 
-export type NoteFilter = { tag?: string; q?: string; kind?: NoteKind };
+/** `sort: 'created'` is a journal's chronology; the default stays "what did I touch last". */
+export type NoteFilter = {
+  tag?: string;
+  excludeTag?: string;
+  q?: string;
+  kind?: NoteKind;
+  sort?: 'created';
+  limit?: number;
+};
 export type DebugTable = { name: string; count: number };
 export type DebugPage = { columns: string[]; rows: Record<string, unknown>[]; total: number };
 
@@ -11,6 +19,7 @@ export type DebugPage = { columns: string[]; rows: Record<string, unknown>[]; to
 export interface Handlers {
   deviceId(): string;
   listNotes(filter?: NoteFilter): NoteSummary[];
+  countNotes(filter?: NoteFilter): number;
   getNote(id: string): Note | undefined;
   createNote(kind: NoteKind, title?: string): string;
   saveBody(noteId: string, body: string): boolean;

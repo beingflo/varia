@@ -341,4 +341,16 @@ describe('Note view', () => {
     await waitFor(() => expect(document.querySelector('.version-body')?.textContent).toBe('version 29'));
     expect(seen).toHaveLength(2);
   });
+
+  it('lists the tags its body names, and hands a plain click to the app', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('note');
+    await repo.saveBody(id, 'entry\n\n#work #urgent');
+    const onTag = vi.fn();
+    renderWithRepo(() => <NoteView id={id} onTag={onTag} />, repo);
+
+    const chip = await screen.findByText('#urgent');
+    fireEvent.click(chip);
+    expect(onTag).toHaveBeenCalledWith('urgent');
+  });
 });

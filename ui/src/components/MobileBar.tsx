@@ -17,6 +17,12 @@ const ACTIONS: Record<BarKind, { command: Command; label: string }[]> = {
     { command: 'toggle-done', label: 'done' },
     { command: 'sync', label: 'sync' },
   ],
+  // A stream is for reading and for one gesture: file a new entry.
+  tag: [
+    { command: 'list', label: 'notes' },
+    { command: 'new-entry', label: 'new entry' },
+    { command: 'sync', label: 'sync' },
+  ],
   // No versions and no done toggle on a board: those act on one note, and a board is many.
   dashboard: [
     { command: 'list', label: 'notes' },
@@ -26,7 +32,7 @@ const ACTIONS: Record<BarKind, { command: Command; label: string }[]> = {
   ],
 };
 
-export type BarKind = 'note' | 'todo' | 'dashboard';
+export type BarKind = 'note' | 'todo' | 'dashboard' | 'tag';
 
 /** Hidden by CSS on anything with a keyboard. */
 export default function MobileBar(props: { kind: BarKind }) {

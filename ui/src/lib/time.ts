@@ -14,3 +14,14 @@ export function ago(timestamp: number, now = Date.now()): string {
   const [, div, label] = UNITS.find(([limit]) => seconds < limit)!;
   return `${Math.floor(seconds / div)}${label}`;
 }
+
+/** Absolute local time, for a journal where "3d ago" is less useful than when it happened. */
+export function stamp(timestamp: number): string {
+  return new Date(timestamp).toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}

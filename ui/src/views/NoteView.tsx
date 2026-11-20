@@ -1,8 +1,9 @@
-import { createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js';
+import { createEffect, createResource, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import History from '../components/History';
 import Editor, { type EditorApi } from '../editor/Editor';
 import { useRepo } from '../db/context';
 import { onCommand, onEditorFocus } from '../lib/commands';
+import { tagLine } from '../db/ops';
 import { registerFlush } from '../lib/flush';
 import { signalViewReady } from '../lib/ready';
 
@@ -14,8 +15,19 @@ import { signalViewReady } from '../lib/ready';
  * `embedded` is a dashboard tile: the page frame, the caret grab, the history overlay and the
  * view-level commands belong to the board, not to one tile.
  */
-export default function NoteView(props: { id?: string; onCreated?: (id: string) => void; embedded?: boolean }) {
+export default function NoteView(props: {
+  id?: string;
+  onCreated?: (id: string) => void;
+  embedded?: boolean;
+  /** Applied once, when this draft becomes a note: a journal entry is filed as it is written. */
+  tags?: string[];
+  /** Overrides the embedded rule, for a draft in a stream that should start typing at once. */
+  autoFocus?: boolean;
+  onTag?: (tag: string) => void;
+}) {
   const repo = useRepo();
+  // The note's tags are an index over its body, so they are read, never edited here.
+  const [tags, { refetch: refetchTags }] = createResource(() => props.id ?? '', (id) => (id ? repo.tagsOf(id) : []));
   const [noteId, setNoteId] = createSignal(props.id);
   const [body, setBody] = createSignal('');
   const [saved, setSaved] = createSignal('');
@@ -110,7 +122,12 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
     const id = startId ?? reused ?? (await repo.createNote('note'));
     if (created) draftNote = { id, gen };
 
-    await repo.saveBody(id, text);
+    // A tagged draft keeps its tag line out of the document: the note on disk is `text` plus that
+    // line, so the caret can never end up after it and the entry cannot lose its tag by typing.
+    // Written on every save of this draft's session, so a background flush that creates the note
+    // and a ⌘S later on both leave exactly one tag line. A later edit is an ordinary note edit.
+    const footer = props.tags?.length && (created || draftNote?.gen === gen) ? tagLine(props.tags) : '';
+    await repo.saveBody(id, text + footer);
     if (mine()) {
       setSaved(text);
     }
@@ -119,6 +136,7 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
       ownNote = id;
       props.onCreated?.(id);
     }
+    if (mine()) void refetchTags();
   };
 
   const openHistory = async () => {
@@ -143,13 +161,38 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
     if (props.embedded) void flush();
   });
 
+  const chips = (
+    <Show when={!props.embedded && (tags() ?? []).length}>
+      <ul class="tag-chips" aria-label="tags">
+        <For each={tags()}>
+          {(tag) => (
+            <li>
+              <a
+                href={`${import.meta.env.BASE_URL}tag/${tag}`}
+                onClick={(event) => {
+                  // Plain click stays in the app; a modified click is the browser's (a new tab).
+                  if (!props.onTag || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                  event.preventDefault();
+                  props.onTag(tag);
+                }}
+              >
+                #{tag}
+              </a>
+            </li>
+          )}
+        </For>
+      </ul>
+    </Show>
+  );
+
   const editorBox = (
     <>
+      {chips}
       <Editor
         docKey={noteId() ?? 'draft'}
         ariaLabel="note body"
         placeholder={props.embedded ? '' : 'Write something nice'}
-        autoFocus={!props.embedded}
+        autoFocus={props.autoFocus ?? !props.embedded}
         value={body()}
         onInput={(text) => {
           edits += 1;

@@ -1,7 +1,8 @@
 // Local-first data layer. Every write appends an op and materialises it through `applyOp`,
 // so local edits and pulled ops share one code path (design/002).
 import { migrate } from './schema';
-import { beats, between, titleFromBody, type Stamp } from './ops';
+import { beats, between, tagsOfLastLine, titleFromBody, type Stamp } from './ops';
+import type { NoteFilter } from './api';
 import type {
   Db, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, OpKind, Version, VersionHead, VersionMeta, VersionPair,
 } from './types';
@@ -20,6 +21,15 @@ export function openDb(db: Db, device?: string): string {
   db.exec('PRAGMA journal_mode = WAL');
   db.exec('PRAGMA synchronous = NORMAL');
   db.exec('PRAGMA busy_timeout = 5000');
+  // Bodies written before tags were indexed still carry tag lines nobody derived: one pass, once.
+  if (!meta(db, 'tags_indexed')) {
+    tx(db, () => {
+      for (const note of db.all<{ id: string; body: string }>('SELECT id, body FROM note')) {
+        writeTags(db, note.id, note.body);
+      }
+      setMetaValue(db, 'tags_indexed', '1');
+    });
+  }
   const existing = meta(db, 'device');
   if (existing) return existing;
   const id = device ?? crypto.randomUUID();
@@ -41,6 +51,19 @@ function setMetaValue(db: Db, key: string, value: string): void {
     key,
     value,
   ]);
+}
+
+/**
+ * `note_tag` is an index over the body, never a second source of truth: the tag line is the input
+ * and deleting that line untags the note. Both paths that write a body call this, so a snapshot
+ * pulled from another device re-derives exactly like a local save.
+ */
+function writeTags(db: Db, noteId: string, body: string): void {
+  db.run('DELETE FROM note_tag WHERE note_id = ?', [noteId]);
+  for (const name of tagsOfLastLine(body)) {
+    db.run('INSERT INTO tag(name) VALUES(?) ON CONFLICT(name) DO NOTHING', [name]);
+    db.run('INSERT INTO note_tag(note_id, name) VALUES(?, ?) ON CONFLICT DO NOTHING', [noteId, name]);
+  }
 }
 
 function tx<T>(db: Db, fn: () => T): T {
@@ -181,6 +204,7 @@ function applySnapshot(db: Db, op: Op): void {
     JSON.stringify({ ...stamps, body: stampOf(op) }),
     op.note_id,
   ]);
+  writeTags(db, op.note_id, body);
 }
 
 function applyTodoOp(db: Db, op: Op & { payload: ItemChange }): void {
@@ -264,6 +288,7 @@ export function saveBody(db: Db, noteId: string, body: string): boolean {
       parent_version_id: headVersionId(db, noteId),
       body,
     });
+    writeTags(db, noteId, body);
     return true;
   });
 }
@@ -348,7 +373,8 @@ export function getNote(db: Db, noteId: string): Note | undefined {
   return db.get<Note>('SELECT * FROM note WHERE id = ?', [noteId]);
 }
 
-export function listNotes(db: Db, filter: { tag?: string; q?: string; kind?: NoteKind } = {}): NoteSummary[] {
+/** Shared by the list and the count, so a filter cannot mean two different things. */
+function noteWhere(filter: NoteFilter): { clause: string; params: unknown[] } {
   const where = ['n.deleted = 0'];
   const params: unknown[] = [];
   if (filter.kind) {
@@ -359,19 +385,35 @@ export function listNotes(db: Db, filter: { tag?: string; q?: string; kind?: Not
     where.push('EXISTS(SELECT 1 FROM note_tag t WHERE t.note_id = n.id AND t.name = ?)');
     params.push(filter.tag);
   }
+  if (filter.excludeTag) {
+    where.push('NOT EXISTS(SELECT 1 FROM note_tag t WHERE t.note_id = n.id AND t.name = ?)');
+    params.push(filter.excludeTag);
+  }
   if (filter.q) {
     const like = `%${filter.q.replace(/[%_]/g, (m) => `\\${m}`)}%`;
     where.push(`(n.title LIKE ? ESCAPE '\\' OR n.body LIKE ? ESCAPE '\\' OR EXISTS(
       SELECT 1 FROM todo_item i WHERE i.note_id = n.id AND i.deleted = 0 AND i.text LIKE ? ESCAPE '\\'))`);
     params.push(like, like, like);
   }
+  return { clause: where.join(' AND '), params };
+}
+
+export function listNotes(db: Db, filter: NoteFilter = {}): NoteSummary[] {
+  const { clause, params } = noteWhere(filter);
   return db.all<NoteSummary>(
     `SELECT n.*,
        (SELECT count(*) FROM todo_item i WHERE i.note_id = n.id AND i.deleted = 0 AND i.done = 0) AS open_items,
        (SELECT count(*) FROM todo_item i WHERE i.note_id = n.id AND i.deleted = 0) AS item_count
-     FROM note n WHERE ${where.join(' AND ')} ORDER BY n.updated DESC`,
-    params,
+     FROM note n WHERE ${clause} ${
+       filter.sort === 'created' ? 'ORDER BY n.created DESC, n.id DESC' : 'ORDER BY n.updated DESC'
+     }${filter.limit ? ' LIMIT ?' : ''}`,
+    filter.limit ? [...params, filter.limit] : params,
   );
+}
+
+export function countNotes(db: Db, filter: NoteFilter = {}): number {
+  const { clause, params } = noteWhere(filter);
+  return db.get<{ n: number }>(`SELECT count(*) AS n FROM note n WHERE ${clause}`, params)?.n ?? 0;
 }
 
 export function versions(db: Db, noteId: string): VersionMeta[] {
