@@ -138,6 +138,29 @@ describe('Todo view', () => {
     });
   });
 
+  // What is typed lives in state, not in the input: a reload underneath must not drop it.
+  it('keeps what was typed into a row while another row changes', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('todo', 'work');
+    await repo.addItem(id, 'one');
+    await repo.addItem(id, 'two');
+    renderWithRepo(() => <TodoView id={id} />, repo);
+
+    const one = (await screen.findByDisplayValue('one')) as HTMLInputElement;
+    one.focus();
+    fireEvent.input(one, { target: { value: 'one, edited' } });
+
+    // Checking off the other row reloads the list: the row being edited is rebuilt from it.
+    fireEvent.click(screen.getByDisplayValue('two'), { metaKey: true });
+    runCommand('toggle-done'); // and stays visible, so the assertion is about text only
+    await waitFor(() => expect(screen.getByDisplayValue('one, edited')).toBeTruthy());
+
+    fireEvent.blur(screen.getByDisplayValue('one, edited'));
+    await waitFor(async () =>
+      expect((await items(repo, id)).map((item) => item.text)).toEqual(['one, edited', 'two']),
+    );
+  });
+
   it('keeps what was typed into a new row when tab indents it', async () => {
     const repo = testRepo();
     const id = await repo.createNote('todo', 'work');
@@ -208,7 +231,7 @@ describe('Todo view', () => {
     runCommand('save'); // no blur: the field keeps focus, so ⌘S has to commit it itself
 
     await waitFor(async () => expect((await items(repo, id)).map((item) => item.text)).toEqual(['bought']));
-    expect((add as HTMLInputElement).value).toBe('');
+    await waitFor(() => expect((screen.getByLabelText('new item') as HTMLInputElement).value).toBe(''));
   });
 
   it('creates exactly one note when a title save and an item race for it', async () => {

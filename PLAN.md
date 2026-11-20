@@ -61,6 +61,7 @@ the readiness marker the browser tests wait on.
 
 ## Phase 4: Advanced, unordered
 
+- [ ] observability in acta
 - [ ] version tree view: browse the tree, open a note at any node, edit an old version, mark resolved
 - [ ] vim mode for the note editor (pick the implementation then; the editor is behind one component)
 - [ ] quick capture: `…/?q=work buy milk` opens the `work` todo list with a new item appended
@@ -70,6 +71,13 @@ the readiness marker the browser tests wait on.
 - [ ] warn when changes have been unsynced for days
 - [ ] token revocation and multiple tokens per account
 - [ ] todo reminders
+- [ ] drag and drop for list items, with the bullet as the grab handle: pointer-based (no library),
+      y picks the target row, x picks the depth, edge autoscroll, plus ⌥↑/⌥↓ to move and ⌥→/⌥← to
+      nest for keyboard parity. A move is one existing `todo_item` op carrying `ordering` and
+      `depth`, so it syncs as it is; `between` needs a gap check with an occasional renumber of the
+      siblings, since dragging can exhaust the midpoint precision (~50 times in the same gap).
+      A library only earns its place if dragging must work on a phone, where long-press versus
+      scroll and autoscroll are the expensive parts.
 - [ ] `note_patch` ops and content-addressed chunk dedupe, when snapshot volume hurts
 - [ ] `checkpoint` ops for fast fresh-device bootstrap
 

@@ -68,28 +68,42 @@ does; a static host needs the SPA fallback configured.
 
 ### Todo lists
 
+What is being typed lives in state (`edits`: row id → text), not in the input, and every write is
+followed by a read of the list. So a row can be rebuilt at any moment — indent, remote op, reload —
+without losing a keystroke, and there is one commit path (`writeText`) for blur, Enter, Tab, Backspace
+and ⌘S. The typed text is only handed over once the reload carries it, and the add field is only
+cleared if nothing else was typed in the meantime.
+
+Two narrow exceptions to "the database is what is on screen", both because a keystroke can arrive
+before a write could finish:
+- A blank row created by Enter is on screen at once (`localRows`) and stays put across reloads until
+  its own write lands, so typing can start immediately in the middle of a list.
+- A draft already queued from the add field counts as "a row below" when Enter decides whether this
+  row is the last one, since the list on screen is a write behind.
+
+Writes go through one serial queue, so a check-off, an indent and a text edit cannot interleave.
+
 A list with no `id` is a draft, like the note editor: nothing is written until an item or a title
 exists, so ⌘⇧E followed by ⌘E leaves no row behind. The first write creates the note (`ensureNote`,
 guarded by an in-flight promise so two concurrent writes cannot create two notes) and the view tells
 `App` its id afterwards.
 
 ⌘S commits whatever is being edited: a half-typed item in the add field (as Enter would), then the
-focused item's text, then the title. Tab and Enter commit the same way before they change anything:
-what is typed lives in the input, so a row rebuilt from the stored text would drop it.
+focused item's text, then the title. Tab and Enter commit through the same path before they change
+anything, so indenting a row never loses what was typed into it.
 
 Enter on the **last** item moves the caret into the placeholder below the list, at that item's depth,
 instead of creating a blank item: there is only ever one empty row on screen. Enter in the middle of a
-list does create a row, because there is no placeholder there to carry the caret; if it is left blank,
-the next insert drops it.
+list creates a row at once, because there is no placeholder there to carry the caret; if it is left
+blank, the next insert drops it.
 
-An item created by Enter and left empty is a placeholder, not an item. Adding another item anywhere
-drops every empty, untouched row, so blank rows cannot pile up at the end; an empty row that parents
-nested rows is kept. Empty rows are otherwise left alone while the list is open, because an empty
-nested item is the step-out target.
+A row left empty and untouched is a placeholder, not an item: adding another item anywhere drops it,
+so blank rows cannot pile up; an empty row that parents nested rows is kept. Empty rows are otherwise
+left alone while the list is open, because an empty nested item is the step-out target.
 
 ## Sync UX
 
-The account view holds one thing: the enrolment string, to copy out or paste in. Sync status is a
+The account view holds the token, to copy out or paste in. Sync status is a
 single line — "synced 2 min ago", "4 changes pending", "sync off" — and the manual "sync now" lives
 next to it. No progress bars, no conflict dialogs in v1.
 

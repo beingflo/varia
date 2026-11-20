@@ -303,6 +303,39 @@ test('an abandoned new list is not saved, and cmd+s commits the item being typed
   await expect(page.getByLabel('and this one too', { exact: true })).toBeVisible();
 });
 
+// Every keystroke path: the row is written from state, so typing and then doing anything at once
+// works. Type-then-Tab used to lose the text, and a fast Enter used to lose the row.
+test('keeps text typed at full speed through enter, tab and blur', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await page.keyboard.press(`${MOD}+Shift+E`);
+  const add = page.getByLabel('new item');
+  await add.fill('parent');
+  await add.press('Enter');
+  await add.fill('child');
+  await page.keyboard.press('Tab');
+  await add.press('Enter');
+
+  // Enter in the middle, then type with no pause at all.
+  await page.getByLabel('parent', { exact: true }).click();
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('typed fast');
+  await page.keyboard.press('Tab');
+  await expect(page.getByLabel('typed fast', { exact: true })).toBeVisible();
+  await expect(page.locator('.items li').nth(2)).toHaveCSS('padding-left', '22.4px');
+
+  // And Enter straight after typing continues the list at that level.
+  await page.getByLabel('typed fast', { exact: true }).press('Enter');
+  await page.keyboard.type('second fast');
+  await page.keyboard.press('Enter');
+  await expect(page.getByLabel('second fast', { exact: true })).toBeVisible();
+
+  await page.waitForTimeout(400);
+  await page.reload();
+  await ready(page);
+  await expect(page.locator('.items li')).toHaveCount(4);
+});
+
 test('refuses to check off a parent with open nested items', async ({ page }) => {
   await page.goto('/');
   await ready(page);
