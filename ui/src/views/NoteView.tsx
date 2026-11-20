@@ -10,8 +10,11 @@ import { signalViewReady } from '../lib/ready';
 /**
  * The editor. With no `id` this is the landing draft: nothing exists in the database until
  * something has been written and saved.
+ *
+ * `embedded` is a dashboard tile: the page frame, the caret grab, the history overlay and the
+ * view-level commands belong to the board, not to one tile.
  */
-export default function NoteView(props: { id?: string; onCreated?: (id: string) => void }) {
+export default function NoteView(props: { id?: string; onCreated?: (id: string) => void; embedded?: boolean }) {
   const repo = useRepo();
   const [noteId, setNoteId] = createSignal(props.id);
   const [body, setBody] = createSignal('');
@@ -31,6 +34,10 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
   // Caret at the end and the page at the top; the editor itself grows with its content.
   const focusEnd = () => editor?.focusEnd();
 
+  const takeFocus = () => {
+    if (!props.embedded) focusEnd();
+  };
+
   const load = async (id: string | undefined) => {
     const mine = ++generation;
     const mark = edits;
@@ -44,8 +51,8 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
       setBody('');
       setSaved('');
       requestAnimationFrame(() => {
-        focusEnd();
-        signalViewReady();
+        takeFocus();
+        if (!props.embedded) signalViewReady();
       });
       return;
     }
@@ -56,8 +63,8 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
     // Focus and signal in the same frame, so a caller waiting for "ready" never sees the old state.
     requestAnimationFrame(() => {
       if (mine !== generation) return;
-      focusEnd();
-      signalViewReady();
+      takeFocus();
+      if (!props.embedded) signalViewReady();
     });
   };
 
@@ -120,22 +127,29 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
   };
 
   onMount(() => {
-    focusEnd();
+    takeFocus();
     const off = [
       registerFlush(flush),
-      onEditorFocus(focusEnd),
-      onCommand('save', () => void flush()),
-      onCommand('history', () => void openHistory()),
+      ...(props.embedded
+        ? []
+        : [onEditorFocus(focusEnd), onCommand('history', () => void openHistory())]),
     ];
     onCleanup(() => off.forEach((unregister) => unregister()));
   });
 
-  return (
-    <main class="page">
+  // A tile can be removed from the board while the caret is still in it: the blur flush is only
+  // reliable on a mouse move to another field, so the unmount saves as well.
+  onCleanup(() => {
+    if (props.embedded) void flush();
+  });
+
+  const editorBox = (
+    <>
       <Editor
         docKey={noteId() ?? 'draft'}
         ariaLabel="note body"
-        placeholder="Write something nice"
+        placeholder={props.embedded ? '' : 'Write something nice'}
+        autoFocus={!props.embedded}
         value={body()}
         onInput={(text) => {
           edits += 1;
@@ -146,9 +160,11 @@ export default function NoteView(props: { id?: string; onCreated?: (id: string) 
           editor = api;
         }}
       />
-      <Show when={historyOpen() && noteId()}>
+      <Show when={!props.embedded && historyOpen() && noteId()}>
         <History noteId={noteId()!} onClose={() => setHistoryOpen(false)} />
       </Show>
-    </main>
+    </>
   );
+
+  return props.embedded ? <div class="tile-note">{editorBox}</div> : <main class="page">{editorBox}</main>;
 }

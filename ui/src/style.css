@@ -10,10 +10,14 @@
   --ok: #3f7d4f;
   /* Line length of the writing column; the page itself stays wide. */
   --measure: 74ch;
+  /* The board's rules: darker than --line, they are the only chrome a tile has. */
+  --rule: color-mix(in srgb, var(--fg) 40%, transparent);
   font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --fg: #e6e6e3; --ink: #f2f2f0; --muted: #85857f; --bg: #131313; --line: #262624; --warn: #e0a050; --ok: #6cae7e; --danger: #f2837a; }
+  :root {
+    --fg: #e6e6e3; --ink: #f2f2f0; --muted: #85857f; --bg: #131313; --line: #262624; --warn: #e0a050; --ok: #6cae7e; --danger: #f2837a;
+  }
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -177,6 +181,102 @@ input[type='search']::-webkit-search-cancel-button { display: none; }
   .version-preview { border-left: none; border-top: 1px solid var(--line); padding: 0.6rem 0 0; }
 }
 
+/* Dashboard: tiles over the whole viewport (design/004). The page measure does not apply here:
+   each tile carries its own reading column, the board keeps the width. */
+.board {
+  width: 100%; min-height: 100dvh; padding: 1.25rem clamp(1rem, 2vw, 2rem) 2rem;
+  display: flex; flex-direction: column; gap: 1rem;
+  /* What the board spends before any tile: padding, the header row and the gap under it. Tile
+     heights are fractions of the room that is left, so the third step fills the viewport. */
+  --board-chrome: 7rem;
+  --tile-gap: 1.25rem;
+}
+.board-head { display: flex; align-items: baseline; gap: 1rem; }
+.board-head .title { margin: 0; flex: 1; min-width: 0; }
+.board-add {
+  flex: none; font-size: 0.8rem; color: var(--muted); border: 1px solid var(--line);
+  border-radius: 3px; padding: 0.3rem 0.6rem;
+}
+.board-add:hover { border-color: var(--muted); color: var(--fg); }
+.board-empty { margin: 0; }
+
+/* Tiles are placed by the grid itself, in both directions: a row is a sixth of the room under the
+   board header, a width number is that many thirds of the board and a height number is 2, 4 or 6 of
+   those sixths. Both numbers are therefore thirds of the board, so a third above two thirds fills
+   a column and a full-height tile keeps its column while the next tiles stack beside it. */
+.board-grid {
+  display: grid; gap: var(--tile-gap);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  --unit: calc((100dvh - var(--board-chrome) - 5 * var(--tile-gap)) / 6);
+  grid-auto-rows: var(--unit);
+  /* A rule down the middle of every gutter, on both axes and only where no tile covers it: one line
+     per column, and one per third of the height — a tile is 2, 4 or 6 of the sixths a row unit is,
+     so a rule every sixth would cut a tile in halves it cannot take. */
+  --column: calc((100% - 2 * var(--tile-gap)) / 3);
+  --third: calc((100dvh - var(--board-chrome) - 2 * var(--tile-gap)) / 3);
+  background-image:
+    repeating-linear-gradient(
+      to right,
+      transparent 0 calc(var(--column) + var(--tile-gap) / 2 - 0.5px),
+      var(--rule) calc(var(--column) + var(--tile-gap) / 2 - 0.5px)
+        calc(var(--column) + var(--tile-gap) / 2 + 0.5px),
+      transparent calc(var(--column) + var(--tile-gap) / 2 + 0.5px) calc(var(--column) + var(--tile-gap))
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0 calc(var(--third) + var(--tile-gap) / 2 - 0.5px),
+      var(--rule) calc(var(--third) + var(--tile-gap) / 2 - 0.5px)
+        calc(var(--third) + var(--tile-gap) / 2 + 0.5px),
+      transparent calc(var(--third) + var(--tile-gap) / 2 + 0.5px) calc(var(--third) + var(--tile-gap))
+    );
+}
+.tile.w1 { grid-column: span 1; }
+.tile.w2 { grid-column: span 2; }
+.tile.w3 { grid-column: span 3; }
+.tile.h1 { grid-row: span 2; }
+.tile.h2 { grid-row: span 4; }
+.tile.h3 { grid-row: span 6; }
+/* Too narrow to share: one column, every tile full width and stacked, and its width number stops
+   mattering. Named per width, or the w2/w3 spans would win on specificity and open implicit
+   columns off the side of a phone. */
+@media (max-width: 60rem) {
+  .board-grid { grid-template-columns: minmax(0, 1fr); background-image: none; }
+  .board-grid > .tile.w1, .board-grid > .tile.w2, .board-grid > .tile.w3 { grid-column: 1 / -1; }
+}
+
+/* A tile keeps its size and scrolls its own content, so a board does not reshuffle under the
+   pointer when the caret moves. Three third-height tiles fill the viewport exactly. No box, no
+   fill, no border: the board's column rules give it structure and the tile adds nothing. */
+.tile {
+  position: relative;
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  /* The page colour: invisible against the page, but it covers the board's rules, so they only
+     show where there is actually a gap between notes. */
+  background: var(--bg);
+}
+/* The controls sit inset in the tile's top right corner, over the content and only while the tile
+   is being worked on: no title bar costing a row, and nothing in the way when the pointer is
+   elsewhere. A finger has no hover, so a coarse pointer always shows them. */
+.tile-controls {
+  /* Clear of the tile body's scrollbar, which sits on the right edge under these buttons. */
+  position: absolute; top: 0.3rem; right: 1rem; z-index: 2; display: flex; gap: 0.1rem;
+  padding: 0.05rem 0.15rem;
+  background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(2px);
+  opacity: 0; transition: opacity 0.12s ease;
+}
+.tile:hover > .tile-controls, .tile:focus-within > .tile-controls { opacity: 1; }
+.tile-controls button, .tile-controls a { padding: 0 0.28rem; font-size: 0.75rem; color: var(--muted); }
+.tile-controls button:hover, .tile-controls a:hover { color: var(--fg); }
+/* Fills the tile, so a note's own wrapper can stretch to it and the whole tile below the text
+   is a click target for the caret. */
+.tile-body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0.7rem 1rem; }
+/* A tile is a column, not a page: no centring and no reading measure — the tile's own width is the
+   measure — and the note stretches to the tile so clicking the empty space under a short note puts
+   the caret at its end, the contract the full-page editor has where its wrapper fills the viewport. */
+.tile-note { min-height: 100%; display: flex; flex-direction: column; }
+.tile .editor { max-width: none; margin-inline: 0; min-height: 4rem; }
+.tile .card { max-width: none; margin-inline: 0; min-height: 0; }
+
 .muted { color: var(--muted); }
 .small { font-size: 0.8rem; }
 /* The enrolment code: one long string, read out loud or copied, so it wraps instead of scrolling. */
@@ -217,6 +317,9 @@ input[type='search']::-webkit-search-cancel-button { display: none; }
   .page { padding-top: calc(4.5rem + env(safe-area-inset-top)); }
   .overlay { padding-top: calc(1.5rem + env(safe-area-inset-top)); }
   .overlay.history { padding-top: calc(1.25rem + env(safe-area-inset-top)); }
+  .board { padding-top: calc(4.5rem + env(safe-area-inset-top)); --board-chrome: calc(10rem + env(safe-area-inset-top)); }
+  /* A finger has no hover: the tile controls are always there. */
+  .tile-controls { opacity: 1; }
   .mobile-bar {
     position: fixed; inset: 0 0 auto 0; z-index: 30; display: flex; justify-content: space-between;
     gap: 0.5rem; font-size: 0.8rem; color: var(--muted); background: var(--bg);

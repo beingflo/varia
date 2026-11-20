@@ -153,6 +153,8 @@ export interface EditorProps {
   docKey: string;
   ariaLabel: string;
   placeholder?: string;
+  /** False in a dashboard tile: several editors must not grab the caret, and none scrolls the page. */
+  autoFocus?: boolean;
   onInput(text: string): void;
   onBlur?(): void;
   onReady?(api: EditorApi): void;
@@ -165,18 +167,22 @@ export default function Editor(props: EditorProps) {
 
   const makeState = (doc: string) => EditorState.create({ doc, extensions: extensions(props) });
 
-  const focusEnd = () => {
+  const focus = () => {
     if (!view) return;
     view.focus();
     const end = view.state.doc.length;
     view.dispatch({ selection: { anchor: end }, scrollIntoView: false });
+  };
+
+  const focusEnd = () => {
+    focus();
     window.scrollTo({ top: 0 });
   };
 
   onMount(() => {
     view = new EditorView({ state: makeState(props.value), parent: host! });
     props.onReady?.({ focusEnd });
-    focusEnd();
+    if (props.autoFocus !== false) focusEnd();
   });
 
   // The parent mirrors our own edits, so any real difference here came from outside: a note
@@ -191,7 +197,7 @@ export default function Editor(props: EditorProps) {
     if (key !== currentKey) {
       currentKey = key;
       view.setState(makeState(next));
-      focusEnd();
+      if (props.autoFocus !== false) focusEnd();
       return;
     }
     view.dispatch({
@@ -208,7 +214,8 @@ export default function Editor(props: EditorProps) {
   const clickUnderText = (event: MouseEvent) => {
     if (!view || (event.target as Element).closest('.cm-editor')) return;
     event.preventDefault(); // the default action would blur the view we are about to focus
-    focusEnd();
+    if (props.autoFocus === false) focus();
+    else focusEnd();
   };
 
   return <div class="editor" ref={host} onMouseDown={clickUnderText} />;

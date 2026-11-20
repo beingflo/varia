@@ -1,8 +1,11 @@
 // One key map, one dispatcher. Views register what they can do; unclaimed commands do nothing.
+import { flushAll } from './flush';
+
 export type Command =
   | 'list'
   | 'new-note'
   | 'new-list'
+  | 'new-dashboard'
   | 'delete'
   | 'save'
   | 'history'
@@ -30,6 +33,12 @@ export function onEditorFocus(fn: () => void): () => void {
 }
 
 export function runCommand(command: Command): void {
+  // Every view with unsaved state has registered a flush, so saving is one broadcast rather than
+  // a handler each: a dashboard has several views on screen and no single one to pick.
+  if (command === 'save') {
+    void flushAll();
+    return;
+  }
   try {
     handlers.get(command)?.();
   } catch (err) {
@@ -63,6 +72,14 @@ export const BINDINGS: { command: Command; label: string; chords: Chord[] }[] = 
     ],
   },
   { command: 'new-list', label: 'new list', chords: [{ key: 'e', mods: ['mod', 'shift'] }] },
+  {
+    command: 'new-dashboard',
+    label: 'new dashboard',
+    chords: [
+      { key: 'b', mods: ['mod', 'shift'] },
+      { key: 'b', mods: ['mod', 'alt'] },
+    ],
+  },
   {
     command: 'save',
     label: 'save now',

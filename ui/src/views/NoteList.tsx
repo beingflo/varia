@@ -1,6 +1,7 @@
 import { createEffect, createResource, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { useRepo } from '../db/context';
 import type { NoteSummary } from '../db/api';
+import { isDashboard } from '../lib/board';
 import { ago } from '../lib/time';
 
 /** Fullscreen, opaque, keyboard driven: ⌘K opens it, Esc closes it, arrows and Enter pick. */
@@ -9,12 +10,17 @@ export default function NoteList(props: {
   onClose: () => void;
   /** The note that is open behind the list, marked so you can see where you are. */
   currentId?: string;
+  /** Hidden from the list, for a picker that already holds them: a board cannot hold a board. */
+  exclude?: (note: NoteSummary) => boolean;
 }) {
   const repo = useRepo();
   const [q, setQ] = createSignal('');
   const [cursor, setCursor] = createSignal(0);
 
   const [notes, { refetch }] = createResource(() => q().trim(), (query) => repo.listNotes({ q: query }));
+  // Filtered here rather than in the fetch, so a picker hides what it already holds without a
+  // second round trip — and the cursor indexes the same list the rows do.
+  const visible = () => (notes() ?? []).filter((note) => !props.exclude?.(note));
 
   createEffect(() => {
     q();
@@ -22,12 +28,12 @@ export default function NoteList(props: {
   });
 
   const pick = (index: number) => {
-    const note = (notes() ?? [])[index];
+    const note = visible()[index];
     if (note) props.onOpen(note);
   };
 
   const move = (delta: number) => {
-    const last = Math.max(0, (notes()?.length ?? 1) - 1);
+    const last = Math.max(0, visible().length - 1);
     setCursor(Math.min(Math.max(cursor() + delta, 0), last));
   };
 
@@ -82,7 +88,7 @@ export default function NoteList(props: {
       <Show when={notes()}>
         {(list) => (
       <ul class="notes">
-        <For each={list()} fallback={<li class="muted">nothing yet</li>}>
+        <For each={visible()} fallback={<li class="muted">nothing yet</li>}>
           {(note, index) => (
             <li class={index() === cursor() ? 'on' : ''}>
               <a
@@ -98,7 +104,7 @@ export default function NoteList(props: {
                 </span>
                 <span class={note.title ? 'title-text' : 'title-text muted'}>
                   {note.title || '(untitled)'}
-                  {note.kind === 'todo' ? ' ~' : ''}
+                  {isDashboard(note.body) ? ' ▦' : note.kind === 'todo' ? ' ~' : ''}
                 </span>
                 <span class="muted small">{ago(note.updated)}</span>
               </a>

@@ -86,6 +86,38 @@ that set it, so concurrent check-off and rename do not fight.
 - `ordering` is a fractional value; inserting between neighbours uses the midpoint, with no renumbering.
 - Done items are hidden by default in the UI, not deleted.
 
+## Dashboards
+
+A dashboard is a `note`, not a kind: no schema change, no new op kind, nothing the server could
+care about. What makes it one is its body.
+
+```
+# Work
+
+{"note":"a3f…","w":2,"h":1}
+{"note":"9b1…","w":1,"h":1}
+
+#dashboard
+```
+
+- The first line is the title heading, so `titleFromBody` and therefore the note list keep working.
+- One tile per line, `{note, w, h}` with the note id and two shares, each 1–3: the width is that
+  many columns of the board's three, the height a third, a half or all of the room left under the
+  board header. One line per tile is what makes a layout change one changed line in
+  the version tree below, so the history pane shows arrangement diffs for free — and restoring a
+  layout is copying an old version, like any other note.
+- The last line is the tag line: the tag `dashboard` is what the client reads to render a board
+  instead of text (D7). It is content, not metadata: press Backspace once too often and the note is
+  a text note holding some JSON, which is recoverable by retyping it.
+- Reading is tolerant (`lib/board.ts`): lines that do not parse are dropped and a body that was
+  hand-edited or half-synced opens as a board with the tiles it can read. Duplicated ids keep one
+  tile, out-of-range sizes are clamped, a board inside a board is refused.
+- Writing a layout is a `note_snapshot` op, so two devices arranging the same board at once fork two
+  versions like any other text edit: last writer wins the body, the other arrangement stays in the
+  tree. A tile op, or merge, would cost a schema and an op kind for a gesture nobody repeats often.
+- A tile only points at a note. Deleting a board deletes no note; deleting a note leaves a tile that
+  says so rather than silently shrinking the layout.
+
 ## Sizes
 
 Whole-body snapshots are the deliberate cost of D3: a 4 KB note edited 30 times a day costs ~45 KB a

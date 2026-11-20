@@ -1,20 +1,27 @@
-import { createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js';
+import { createEffect, createSignal, Match, onCleanup, onMount, Show, Switch } from 'solid-js';
 import HistoryHost from './components/History';
 import MobileBar from './components/MobileBar';
 import Sync from './components/Sync';
 import SyncDot from './components/SyncDot';
+import type { Note } from './db/api';
 import { useRepo } from './db/context';
+import { formatBoard, isDashboard } from './lib/board';
 import { focusEditor, onCommand } from './lib/commands';
 import { flushAll } from './lib/flush';
 import { armViewReady } from './lib/ready';
 import { createEngine } from './sync/engine';
 import { SyncProvider } from './sync/context';
 import { idbAccount } from './sync/keystore';
+import Dashboard from './views/Dashboard';
 import NoteList from './views/NoteList';
 import NoteView from './views/NoteView';
 import TodoView from './views/TodoView';
 
-type Open = { kind: 'note'; id?: string } | { kind: 'todo'; id?: string };
+type Open = { kind: 'note' | 'todo' | 'dashboard'; id?: string };
+
+/** A board is a note that says so in its body: no note type of its own (design/002). */
+const kindOf = (note: Note): Open['kind'] =>
+  note.kind === 'todo' ? 'todo' : isDashboard(note.body) ? 'dashboard' : 'note';
 
 /** One page, no routes: the landing state is an empty note that is only saved once written. */
 export default function App() {
@@ -48,7 +55,7 @@ export default function App() {
     onCleanup(() => document.removeEventListener('visibilitychange', onVisibility));
     void (async () => {
       const note = linkedId ? await repo.getNote(linkedId) : undefined;
-      if (note) setOpen({ kind: note.kind, id: note.id });
+      if (note) setOpen({ kind: kindOf(note), id: note.id });
       setLinked(true); // a url naming a deleted or unknown note falls back to the draft
     })();
 
@@ -76,6 +83,14 @@ export default function App() {
         setListOpen(false);
         setOpen({ kind: 'todo' }); // a draft: no row until an item or a title is written
       }),
+      onCommand('new-dashboard', async () => {
+        await flushAll();
+        setListOpen(false);
+        // No draft: a board has no editor to give a first keystroke to, so it exists at once.
+        const id = await repo.createNote('note');
+        await repo.saveBody(id, formatBoard({ title: 'Board', tiles: [] }));
+        setOpen({ kind: 'dashboard', id });
+      }),
       onCommand('sync', async () => {
         setListOpen(false);
         setSyncOpen(true);
@@ -95,12 +110,17 @@ export default function App() {
 
   return (
     <SyncProvider engine={engine}>
-      <Show
-        when={open().kind === 'note'}
-        fallback={<TodoView id={open().id} onCreated={(id) => setOpen({ kind: 'todo', id })} />}
-      >
-        <NoteView id={open().id} onCreated={(id) => setOpen({ kind: 'note', id })} />
-      </Show>
+      <Switch>
+        <Match when={open().kind === 'dashboard'}>
+          <Dashboard id={open().id ?? ''} onOpen={(note) => setOpen({ kind: kindOf(note), id: note.id })} />
+        </Match>
+        <Match when={open().kind === 'todo'}>
+          <TodoView id={open().id} onCreated={(id) => setOpen({ kind: 'todo', id })} />
+        </Match>
+        <Match when={true}>
+          <NoteView id={open().id} onCreated={(id) => setOpen({ kind: 'note', id })} />
+        </Match>
+      </Switch>
       <Show when={listOpen()}>
         <NoteList
           currentId={open().id}
@@ -118,7 +138,7 @@ export default function App() {
             }
             await flushAll();
             const ready = armViewReady();
-            setOpen({ kind: note.kind, id: note.id });
+            setOpen({ kind: kindOf(note), id: note.id });
             // Close the overlay on a loaded view, not on the previous note's text.
             await Promise.race([ready, new Promise((resolve) => setTimeout(resolve, 150))]);
             setListOpen(false);

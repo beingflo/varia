@@ -16,6 +16,9 @@ Local use requires no account, no network and no server.
 - **Two note types.** `note` is Markdown text, edited as text. `todo` is a list of items with stable
   ids and a done state, changed by item-level ops. Journal-style capture is ordinary notes plus
   tags, not a type.
+- **Dashboards are notes too.** A dashboard is a `note` whose body holds a layout of other notes
+  and whose last line names the tag `dashboard`; it is not a third type, so it needs no schema, no
+  op kind and no server change, and an older client shows it as the text it is.
 - **Fine-grained history, kept forever.** Debounced whole-body snapshots for notes (parented, so the
   history of a note is a tree), one op per checklist item change for todos. Nothing is pruned.
 - **Encrypted sync.** Ops are compressed, then AES-GCM encrypted on the client with a key the server
@@ -45,7 +48,8 @@ ui/         SolidJS + Vite PWA (client)
 D1 Owner-scoped accounts, no collaboration or sharing. Conflicts only ever happen between your own
 devices.
 D2 Two note types; text notes are Markdown, never a rich-text document model. The source is shown
-with syntax highlighting rather than rendered into a separate view. No `journal` type.
+with syntax highlighting rather than rendered into a separate view. No `journal` type. A dashboard
+is not a type either: it is a note carrying a layout and a reserved tag (`002-data-model.md`).
 D3 History is an append-only op log, kept forever; snapshots only when the body changed; concurrent
 text edits stay as sibling branches.
 D4 Client is SQLite (WASM) over OPFS in a dedicated worker, using the `opfs` VFS so SQLite's own
@@ -55,7 +59,9 @@ data model.
 D6 Local storage is best-effort — iOS deletes script-writable storage for unused origins after ~7
 days. The log on the server (or an export) is the real copy.
 D7 Flat notes, client-side search; no folders. Tags live in the data model (`note_tag`, tag ops) but
-have no UI yet — the likely direction is deriving them from the note body rather than editing them.
+have no UI yet — they are derived from the note body instead: the last line of a note, when it is
+nothing but `#tag`s, names that note's tags. One note in the set is `#dashboard`, and that is what
+makes it a dashboard.
 D8 End-to-end encryption with a client-generated root key, HKDF subkeys, non-extractable at rest.
 Losing every device and the enrolment code loses the data permanently.
 D9 One op log for all note types, one push/pull cursor protocol, client-side materialisation.

@@ -2,7 +2,7 @@ import { For } from 'solid-js';
 import { runCommand, type Command } from '../lib/commands';
 
 /** A touch screen has no cheatsheet: the commands the shortcuts stand for, as buttons. */
-const ACTIONS: Record<'note' | 'todo', { command: Command; label: string }[]> = {
+const ACTIONS: Record<BarKind, { command: Command; label: string }[]> = {
   note: [
     { command: 'list', label: 'notes' },
     { command: 'new-note', label: 'new note' },
@@ -17,10 +17,19 @@ const ACTIONS: Record<'note' | 'todo', { command: Command; label: string }[]> = 
     { command: 'toggle-done', label: 'done' },
     { command: 'sync', label: 'sync' },
   ],
+  // No versions and no done toggle on a board: those act on one note, and a board is many.
+  dashboard: [
+    { command: 'list', label: 'notes' },
+    { command: 'new-note', label: 'new note' },
+    { command: 'new-list', label: 'new list' },
+    { command: 'sync', label: 'sync' },
+  ],
 };
 
+export type BarKind = 'note' | 'todo' | 'dashboard';
+
 /** Hidden by CSS on anything with a keyboard. */
-export default function MobileBar(props: { kind: 'note' | 'todo' }) {
+export default function MobileBar(props: { kind: BarKind }) {
   return (
     <nav class="mobile-bar" aria-label="actions">
       <For each={ACTIONS[props.kind]}>

@@ -7,7 +7,7 @@ SolidJS + Vite PWA, local-first: the UI is never blocked on the network and only
 ```
 ui/src/db/       sqlite-wasm worker, schema/migrations, materialiser, repo functions
 ui/src/sync/     key handling, enrolment code, push/pull loop, triggers
-ui/src/views/    Notes, Note, Todo, History, Search, Account
+ui/src/views/    Notes, Note, Todo, Dashboard, History, Search, Account
 ui/src/editor/    CodeMirror wrapper (see below)
 ui/src/components/  history, sync status
 ```
@@ -48,6 +48,52 @@ The open note is in the address bar as `/note/<id>` and reopened on load, so a r
 lands on the same note. Written with `replaceState`: moving between notes is not a history trail.
 The path form needs the host to serve `index.html` for unknown paths — the single-binary service
 does; a static host needs the SPA fallback configured.
+
+## Dashboards
+
+A dashboard is a note whose body holds a tile layout (`002-data-model.md`), opened as a page over
+the whole viewport — no `--measure` page box, its own container, the tiles carry the reading column.
+The note list marks one with `▦`, and `⌘⇧B` makes one.
+
+- **Tiles are the ordinary views.** A tile mounts `NoteView` or `TodoView` with `embedded`, which
+  drops the page frame, the caret grab, the history overlay and the view-level commands; everything
+  below that (flush queue, `edits`, per-item writes, undo history) is per instance and unaffected.
+  Several CodeMirror instances are cheap: measured on this editor, 12 mounted editors cost 6 ms of
+  mount time and 0.2 ms per keystroke.
+- **The board is ruled, and only where there is a gap.** Two repeating gradients on `.board-grid`
+  draw a hairline down the middle of every column and of every third of the height — a tile is 2, 4
+  or 6 sixths tall, so a rule per sixth would cut one where it can never end. A tile is filled with
+  the page colour, so it covers those rules and they appear only in the empty space: a continuous
+  line down a column nobody occupies, a short crossing where a row rule passes it. The ink is `--rule`
+  (40% of `--fg`, darker than `--line`: it is the only structure there is). No title bar: the note's
+  own first line names it, and the controls (open, move up/down, width, height, remove) are inset in
+  the top right corner, showing on hover or focus and always on a coarse pointer, where there is no
+  hover. Under 60rem the rules are off, because nothing is shared there anyway.
+- **A tile's note fills it.** `.tile-body` grows to the tile and the note's wrapper with it, so the
+  empty space below a one-line note is still a click target: clicking there focuses the editor at
+  the end of the text, the same contract the full-page editor has where its wrapper fills the
+  viewport. The reading measure (`--measure`) is dropped inside a tile: the tile's width is the
+  measure, chosen per tile with the width number.
+- **A board writes on every action.** Adding, moving, resizing or removing a tile is one click and
+  one `note_snapshot` of the whole layout — no debounce, no dirty state, and `saveBody` writes nothing
+  when the body is unchanged. The title is the only typed field, so it is registered as a flush:
+  committed on blur, on ⌘S, before a sync, and before a command leaves the view.
+- **Sizes are shares of the board.** Width is 1–3 columns of a three-column grid; height is 2, 3 or
+  6 sixths of the room left under the board header, that is a third, a half or all of it. The grid
+  places the tiles itself, so a full-height tile keeps its column and the next tiles stack beside it,
+  and a tile that no longer fits moves to the next free place instead of being squeezed in. Nothing
+  is in pixels, so a board reflows, and three short tiles fill the viewport exactly. Under 60rem
+  there is no sharing at all: every tile is full width and the width number stops mattering, so a
+  phone gets one stacked column whatever the board says.
+- **A tile keeps its size.** It never changes size under the pointer: it scrolls its own content,
+  and the caret stays visible because CodeMirror scrolls the nearest scrolling ancestor (measured: a
+  60-line note in a third-height tile scrolls the tile, not the board).
+- **One view's commands for many views.** `save` is broadcast to every registered flush, because a
+  board has several views and no single one to pick. Everything else stays the one view that owns
+  it: `delete` deletes the board itself (never the notes it points at), and a board registers no
+  `history`, so versions are off there — those act on one note, and a board is many.
+- **Grid, not canvas.** No absolute positions, no drag: order and two numbers, edited from the
+  tile's corner. It reflows, it is reachable by keyboard and touch, and it needs no pointer maths.
 
 ## Editing
 

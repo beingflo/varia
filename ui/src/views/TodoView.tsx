@@ -33,8 +33,9 @@ function merge(current: Item[], next: Item[]): Item[] {
  * write instead of being guessed at. A row can then be rebuilt at any time — indent, remote op,
  * reload — without losing a keystroke, and there is one commit path instead of five.
  */
-export default function TodoView(props: { id?: string; onCreated?: (id: string) => void }) {
+export default function TodoView(props: { id?: string; onCreated?: (id: string) => void; embedded?: boolean }) {
   const repo = useRepo();
+  let root: HTMLDivElement | undefined;
   const [noteId, setNoteId] = createSignal(props.id);
   const [showDone, setShowDone] = createSignal(false);
   const [draft, setDraft] = createSignal('');
@@ -184,16 +185,18 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
         });
         await reconcile();
         requestAnimationFrame(() => {
-          if (idle()) focusStart();
-          signalViewReady();
+          if (idle() && !props.embedded) focusStart();
+          if (!props.embedded) signalViewReady();
         });
       },
     ),
   );
 
   // Which item input has focus. Tracked at document level: rebuilding a row fires focusout on the
-  // removed node, and a per-input blur handler cannot tell that apart from a real blur.
+  // removed node, and a per-input blur handler cannot tell that apart from a real blur. Scoped to
+  // this view, since a dashboard tile next to this one has item inputs of its own.
   const trackFocus = (event: FocusEvent) => {
+    if (!root?.contains(event.target as Node | null)) return;
     const input = (event.target as HTMLElement | null)?.closest<HTMLInputElement>('.item-text');
     focusedId = input?.dataset.item ?? null;
   };
@@ -238,13 +241,16 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
   };
 
   onMount(() => {
-    focusStart();
+    if (!props.embedded) focusStart();
     document.addEventListener('focusin', trackFocus);
     const off = [
       registerFlush(flush),
-      onCommand('save', () => void flush()),
-      onCommand('toggle-done', () => setShowDone(!showDone())),
-      onEditorFocus(() => addInput?.focus({ preventScroll: true })),
+      ...(props.embedded
+        ? []
+        : [
+            onCommand('toggle-done', () => setShowDone(!showDone())),
+            onEditorFocus(() => addInput?.focus({ preventScroll: true })),
+          ]),
     ];
     const stop = repo.onChange?.(() => void reconcile());
     onCleanup(() => {
@@ -253,6 +259,11 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
       clearTimeout(warnTimer);
       document.removeEventListener('focusin', trackFocus);
     });
+  });
+
+  // Removing a tile unmounts this view with the caret possibly still in the add field.
+  onCleanup(() => {
+    if (props.embedded) void flush();
   });
 
   // ---------------------------------------------------------------- helpers
@@ -538,8 +549,7 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
     }
   };
 
-  return (
-    <main class="page">
+  const card = (
       <div class="card">
         <input
           ref={titleInput}
@@ -631,7 +641,7 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
           />
         </div>
       </div>
-
-    </main>
   );
+
+  return props.embedded ? <div class="tile-todo" ref={root}>{card}</div> : <main class="page" ref={root}>{card}</main>;
 }
