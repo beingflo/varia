@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor } from '@solidjs/testing-library';
 import { describe, expect, it } from 'vitest';
 import { testRepo } from '../db/inProcess';
 import { runCommand } from '../lib/commands';
+import { flushAll } from '../lib/flush';
 import { renderWithRepo } from '../test-utils';
 import TodoView from './TodoView';
 
@@ -140,6 +141,50 @@ describe('Todo view', () => {
 
   // A flush started mid-word (every sync flushes before it pushes) must not hand back an older
   // version of the row: the characters typed after the write began would disappear.
+  // Every sync flushes before it pushes. Committing the draft then would park a half-typed copy
+  // above the field the caret is still typing in.
+  // Typing on while the write is in flight must leave only the new characters behind, not a second
+  // item that repeats the first.
+  it('does not repeat the item when the field is typed into during the write', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('todo', 'work');
+    const slow = {
+      ...repo,
+      addItem: async (...args: Parameters<typeof repo.addItem>) => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return repo.addItem(...args);
+      },
+    };
+    renderWithRepo(() => <TodoView id={id} />, slow);
+
+    const add = screen.getByLabelText('new item') as HTMLInputElement;
+    add.focus();
+    fireEvent.input(add, { target: { value: 'bought' } });
+    fireEvent.keyDown(add, { key: 'Enter' }); // "bought" is on its way
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    fireEvent.input(add, { target: { value: 'bought milk' } }); // the user types on
+
+    await waitFor(async () => expect((await items(repo, id)).map((item) => item.text)).toEqual(['bought']));
+    await waitFor(() => expect((screen.getByLabelText('new item') as HTMLInputElement).value).toBe(' milk'));
+  });
+
+  it('leaves the half-typed item alone when a sync flush runs, and saves it when leaving', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('todo', 'work');
+    renderWithRepo(() => <TodoView id={id} />, repo);
+
+    const add = screen.getByLabelText('new item') as HTMLInputElement;
+    add.focus();
+    fireEvent.input(add, { target: { value: 'half typ' } });
+
+    await flushAll(true); // the engine, before a push
+    expect(await items(repo, id)).toHaveLength(0);
+    expect(add.value).toBe('half typ');
+
+    await flushAll(); // leaving the view
+    await waitFor(async () => expect((await items(repo, id)).map((item) => item.text)).toEqual(['half typ']));
+  });
+
   it('keeps characters typed while a save of that row is in flight', async () => {
     const repo = testRepo();
     const id = await repo.createNote('todo', 'work');
@@ -232,6 +277,21 @@ describe('Todo view', () => {
 
     await waitFor(async () => expect((await items(repo, id)).map((i) => i.text)).toEqual(['one', 'two']));
     expect(document.activeElement).toBe(screen.getByDisplayValue('two'));
+  });
+
+  // Backspacing through a list must end with the caret in the new-item field, not on the body.
+  it('focuses the new-item field when backspace removes the last remaining item', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('todo', 'work');
+    await repo.addItem(id, '');
+    renderWithRepo(() => <TodoView id={id} />, repo);
+
+    const empty = await screen.findByLabelText('empty item');
+    empty.focus();
+    fireEvent.keyDown(empty, { key: 'Backspace' });
+
+    await waitFor(async () => expect(await items(repo, id)).toHaveLength(0));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('new item')));
   });
 
   it('saves the focused item with the save command, without blurring it', async () => {

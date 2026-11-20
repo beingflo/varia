@@ -87,6 +87,13 @@ Every sync flushes before it pushes, so a write of the row being typed into can 
 write therefore only hands the input's text back if the input still holds exactly what it wrote;
 anything typed after the write began stays an edit and is written next.
 
+That pre-push flush is marked `background`: it saves the rows but never the add field's draft, since
+turning a half-typed item into an item would park a copy above the field the caret is still in. A
+flush on leaving the view does save the draft. When an item is created from the field, only the
+submitted text is taken out of it — anything typed during the write stays as the next draft, rather
+than riding along and repeating the item on the next Enter.
+
+A new list starts with the caret in its title; reopening an existing one starts at the item field.
 A list with no `id` is a draft, like the note editor: nothing is written until an item or a title
 exists, so ⌘⇧E followed by ⌘E leaves no row behind. The first write creates the note (`ensureNote`,
 guarded by an in-flight promise so two concurrent writes cannot create two notes) and the view tells
@@ -100,6 +107,10 @@ Enter on the **last** item moves the caret into the placeholder below the list, 
 instead of creating a blank item: there is only ever one empty row on screen. Enter in the middle of a
 list creates a row at once, because there is no placeholder there to carry the caret; if it is left
 blank, the next insert drops it.
+
+Backspace on an empty row removes it and puts the caret on the nearest row above that still exists
+(not simply the previous one: a fast run of backspaces can drop two rows before either write lands),
+then on the last row there is, then in the new-item field. The caret is never left on the body.
 
 A row left empty and untouched is a placeholder, not an item: adding another item anywhere drops it,
 so blank rows cannot pile up; an empty row that parents nested rows is kept. Empty rows are otherwise

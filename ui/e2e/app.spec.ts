@@ -166,13 +166,14 @@ test('runs a todo list: add, edit in place, check off with cmd, delete', async (
   await page.keyboard.press(`${MOD}+Shift+E`);
 
   const add = page.getByLabel('new item');
-  await expect(add).toBeFocused(); // a new list starts at the item field, not the title
 
   const title = page.getByLabel('list title');
+  await expect(title).toBeFocused(); // a new list starts at its title
   await expect(title).toHaveValue('');
   await expect(title).toHaveAttribute('placeholder', 'Untitled list');
   await title.fill('work');
   await press(page, 's');
+  await add.focus();
 
   for (const text of ['buy milk', 'book dentist']) {
     await add.fill(text);
@@ -276,7 +277,7 @@ test('an abandoned new list is not saved, and cmd+s commits the item being typed
   await ready(page);
   // ⌘⇧E then ⌘E: the empty list leaves nothing in the note list.
   await page.keyboard.press(`${MOD}+Shift+E`);
-  await expect(page.getByLabel('new item')).toBeFocused();
+  await expect(page.getByLabel('list title')).toBeFocused(); // a new list starts at its title
   await page.keyboard.press(`${MOD}+E`);
   await press(page, 'k');
   await expect(page.locator('.notes li.muted')).toHaveText('nothing yet'); // no note was written
@@ -334,6 +335,32 @@ test('keeps text typed at full speed through enter, tab and blur', async ({ page
   await page.reload();
   await ready(page);
   await expect(page.locator('.items li')).toHaveCount(4);
+});
+
+// Backspacing through a list used to leave the caret on the body once the row above was gone.
+test('keeps the caret on a row while backspacing a list away', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await page.keyboard.press(`${MOD}+Shift+E`);
+  const add = page.getByLabel('new item');
+  for (const text of ['one', 'two', 'three']) {
+    await add.fill(text);
+    await add.press('Enter');
+  }
+  const focused = () =>
+    page.evaluate(() => {
+      const el = document.activeElement as HTMLInputElement | null;
+      return `${el?.className ?? 'none'}:${el?.getAttribute('aria-label') ?? ''}`;
+    });
+
+  await page.getByLabel('three', { exact: true }).click();
+  await page.keyboard.press('End');
+  for (let i = 0; i < 9; i += 1) await page.keyboard.press('Backspace'); // empties and drops each row
+
+  // Whatever remains, the caret is on a row or in the field, never on the body.
+  await expect.poll(focused).toMatch(/^(item-text|add):/);
+  await page.keyboard.type('still typing');
+  await expect.poll(focused).toContain('still typing');
 });
 
 test('refuses to check off a parent with open nested items', async ({ page }) => {

@@ -66,7 +66,7 @@ export function createEngine(options: {
     running = true;
     patch({ state: 'syncing' });
     try {
-      await flushAll(); // unsaved edits become ops before they are pushed
+      await flushAll(true); // saved edits become ops before they are pushed, half-typed ones wait
       const result = await syncNow({ repo, key: account.key, token: account.token, transport });
       // A backlog larger than five pages drains by chaining runs; the rate limiter paces it.
       if (result.more || result.rewound) queued = true;

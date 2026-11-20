@@ -50,6 +50,7 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
   const [edits, setEdits] = createSignal(new Map<string, string>());
   const [warnAt, setWarnAt] = createSignal<{ id: string; left: number } | null>(null);
   let addInput: HTMLInputElement | undefined;
+  let titleInput: HTMLInputElement | undefined;
   let warnTimer: ReturnType<typeof setTimeout> | undefined;
   // A row can be rebuilt by a reload (depth, ordering), which drops focus; remember which row was
   // being edited so the caret can be taken back.
@@ -147,6 +148,9 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
     if (!take(force)) requestAnimationFrame(() => take(false));
   };
 
+  /** A new list starts at its title; an existing one at the item field. */
+  const focusStart = () => (props.id ? addInput : titleInput)?.focus({ preventScroll: true });
+
   const refocusAdd = () => {
     const active = document.activeElement;
     if (active && active !== document.body && active !== addInput) return;
@@ -184,7 +188,7 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
         });
         await reconcile();
         requestAnimationFrame(() => {
-          if (idle()) addInput?.focus({ preventScroll: true });
+          if (idle()) focusStart();
           signalViewReady();
         });
       },
@@ -210,7 +214,7 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
   let queuedDraft: string | undefined;
 
   /** ⌘S saves whatever is being edited: a half-typed new item, the focused row, then the title. */
-  const flush = (): Promise<void> => {
+  const flush = (background = false): Promise<void> => {
     const snapshot = {
       draft: draft(),
       draftDepth: draftDepth(),
@@ -223,7 +227,9 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
     if (typed) queuedDraft = typed;
     return serial(async () => {
       try {
-        if (typed) await writeNew(snapshot.draft, snapshot.draftDepth);
+        // A sync flushing mid-word must leave the draft alone: turning it into an item now would
+        // park a half-typed copy above the field the caret is still typing in.
+        if (typed && !background) await writeNew(snapshot.draft, snapshot.draftDepth);
         if (snapshot.item) await writeText(snapshot.item.id, pendingText(snapshot.item.id));
         const name = snapshot.title.trim(); // empty titles are fine: the list stays untitled
         if (name === snapshot.savedTitle) return;
@@ -236,7 +242,7 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
   };
 
   onMount(() => {
-    addInput?.focus({ preventScroll: true });
+    focusStart();
     document.addEventListener('focusin', trackFocus);
     const off = [
       registerFlush(flush),
@@ -418,10 +424,13 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
     if (!text.trim()) return;
     const typed = text.trim();
     await addRow(typed, Math.min(depth, deepestDraftDepth()));
-    // Cleared in the same batch as the row appearing, and only if nothing else was typed since:
-    // the write is asynchronous, so the field may already hold the next item.
+    // The submitted text is taken out of the field, in the same batch as the row appearing. Only
+    // that prefix goes: the write is asynchronous, so the field may already hold the next item,
+    // and dropping everything would make the caret's continuation repeat the item it created.
     batch(() => {
-      if (draft().trim() === typed) setDraft('');
+      const current = draft();
+      if (current.trim() === typed) setDraft('');
+      else if (current.startsWith(typed)) setDraft(current.slice(typed.length));
     });
     refocusAdd();
   };
@@ -477,13 +486,24 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
 
   /** Backspace in an empty item removes it and puts the caret at the end of the item above. */
   const removeAndGoBack = async (item: Item) => {
+    // The rows above this one, nearest first: a fast run of backspaces can remove two rows before
+    // either write lands, so the caret cannot be pinned to one row that may be gone by then.
+    const list = visible();
+    const index = list.findIndex((row) => row.id === item.id);
+    const above = (index > 0 ? list.slice(0, index) : []).map((row) => row.id).reverse();
     const previous = previousVisible(item);
     if (previous) focusItem(previous.id, true);
     try {
       await repo.removeItem(item.id);
     } finally {
-      await reconcile();
-      if (previous) focusItem(previous.id);
+      const data = await read();
+      if (data) apply(data);
+      // The caret above all else: the nearest row above that is still on screen, else the last row
+      // there is, else the new-item field. It must never be left on the body.
+      const alive = new Set(visible().map((row) => row.id));
+      const target = above.find((id) => alive.has(id)) ?? visible().at(-1)?.id;
+      if (target) focusItem(target, true);
+      else addInput?.focus({ preventScroll: true });
     }
   };
 
@@ -526,6 +546,7 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
     <main class="page">
       <div class="card">
         <input
+          ref={titleInput}
           class="title"
           aria-label="list title"
           placeholder="Untitled list"

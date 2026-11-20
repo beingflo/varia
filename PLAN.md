@@ -53,6 +53,8 @@ the readiness marker the browser tests wait on.
 
 ## Phase 3: Finalize
 
+- [ ] Add favicon
+- [ ] Add landing page
 - [ ] iOS install flow and first-run guidance
 - [ ] inline sync status next to the note stamp (the `⌘⇧S` overlay already shows it)
 - [ ] eviction recovery: token present + empty database → full re-pull from cursor 0

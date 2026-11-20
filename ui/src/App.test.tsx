@@ -83,7 +83,7 @@ describe('App', () => {
     await waitFor(() => expect(screen.getByLabelText('list title')).toHaveProperty('value', ''));
     // Empty notes are not saved, and an untouched list is no different.
     expect(await repo.listNotes()).toHaveLength(0);
-    expect(document.activeElement).toBe(screen.getByLabelText('new item'));
+    expect(document.activeElement).toBe(screen.getByLabelText('list title')); // a new list starts at the title
 
     fireEvent.input(screen.getByLabelText('new item'), { target: { value: 'milk' } });
     fireEvent.keyDown(screen.getByLabelText('new item'), { key: 'Enter' });
