@@ -31,8 +31,6 @@ export interface Note {
   deleted: number;
   /** Per-channel last-writer stamps: `{meta: {l, d}, body: {l, d}}`. */
   stamps: string;
-  /** JSON array of head version ids the user has acknowledged (design/002). */
-  acknowledged: string;
 }
 
 export interface NoteSummary extends Note {

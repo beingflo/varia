@@ -14,7 +14,6 @@ export function createHandlers(db: Db): Handlers {
     versions: (noteId) => repo.versions(db, noteId),
     versionBody: (noteId, versionId) => repo.versionBody(db, noteId, versionId),
     heads: (noteId) => repo.heads(db, noteId),
-    restoreVersion: (noteId, versionId) => repo.restoreVersion(db, noteId, versionId),
     items: (noteId, showDone) => repo.items(db, noteId, showDone),
     addItem: (noteId, text, itemId, depth, ordering) => repo.addItem(db, noteId, text, itemId, depth, ordering),
     toggleItem: (itemId) => repo.toggleItem(db, itemId),

@@ -5,7 +5,7 @@ import type { Handlers, Repo } from './api';
 // Data writes only: sync bookkeeping (`markPushed`, `applyRemotePage`) must not look like a local edit,
 // or every sync would schedule the next one.
 const WRITES = new Set<keyof Handlers>([
-  'createNote', 'saveBody', 'setNoteMeta', 'restoreVersion', 'addItem', 'toggleItem', 'setItemText', 'setItemDepth',
+  'createNote', 'saveBody', 'setNoteMeta', 'addItem', 'toggleItem', 'setItemText', 'setItemDepth',
   'removeItem', 'applyRemote',
 ]);
 
@@ -52,7 +52,7 @@ export function createClient(worker: Worker, channel = new BroadcastChannel('var
   const repo = {} as Record<string, (...args: unknown[]) => Promise<unknown>>;
   for (const method of [
     'deviceId', 'listNotes', 'getNote', 'createNote', 'saveBody', 'setNoteMeta', 'versions', 'versionBody',
-    'heads', 'restoreVersion', 'items', 'addItem', 'toggleItem', 'setItemText', 'setItemDepth', 'removeItem', 'itemHistory',
+    'heads', 'items', 'addItem', 'toggleItem', 'setItemText', 'setItemDepth', 'removeItem', 'itemHistory',
     'tags', 'tagsOf', 'unpushed', 'markPushed', 'applyRemote', 'syncCursor', 'resetCursor', 'applyRemotePage', 'resetSync',
     'debugTables', 'debugRows',
   ] as (keyof Handlers)[]) {

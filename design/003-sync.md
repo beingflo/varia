@@ -138,6 +138,8 @@ was such a disagreement. Three rules remove the class instead of patching instan
 
 A content hash would only add detection of *reordering* by an operator who can already serve garbage;
 ordering does not affect the result, because conflicts are decided by lamport stamps inside the ops.
+Divergence is not tracked either: a fork is two heads, and only the ops decide which one the note
+shows. Nothing acknowledges, resolves or hides a branch — the history tree is the only view of it.
 So the cheap structural rules win: nothing to hash, no full re-pull on the normal path.
 
 ## Two histories, one account

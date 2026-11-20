@@ -1,6 +1,5 @@
 // Local-first data layer. Every write appends an op and materialises it through `applyOp`,
 // so local edits and pulled ops share one code path (design/002).
-import { parseAcknowledged } from '../lib/versions';
 import { migrate } from './schema';
 import { beats, between, titleFromBody, type Stamp } from './ops';
 import type {
@@ -103,12 +102,11 @@ export function applyRemoteOp(db: Db, op: Op): boolean {
 }
 
 function applyNoteMeta(db: Db, op: Op): void {
-  const { kind, title, tags, deleted, acknowledged } = op.payload as {
+  const { kind, title, tags, deleted } = op.payload as {
     kind: NoteKind;
     title?: string;
     tags?: string[];
     deleted?: boolean;
-    acknowledged?: string[];
   };
   const row = db.get<Note>('SELECT * FROM note WHERE id = ?', [op.note_id]);
   const stamps = parseStamps(row?.stamps);
@@ -116,20 +114,15 @@ function applyNoteMeta(db: Db, op: Op): void {
 
   if (!row) {
     db.run(
-      'INSERT INTO note(id, kind, title, body, created, updated, deleted, stamps, acknowledged) VALUES(?,?,?,?,?,?,?,?,?)',
-      [
-        op.note_id, kind, title ?? '', '', op.created, op.created, deleted ? 1 : 0, JSON.stringify(next),
-        JSON.stringify(acknowledged ?? []),
-      ],
+      'INSERT INTO note(id, kind, title, body, created, updated, deleted, stamps) VALUES(?,?,?,?,?,?,?,?)',
+      [op.note_id, kind, title ?? '', '', op.created, op.created, deleted ? 1 : 0, JSON.stringify(next)],
     );
   } else if (beats(stampOf(op), stamps.meta)) {
-    db.run('UPDATE note SET title = ?, deleted = ?, updated = ?, stamps = ?, acknowledged = ? WHERE id = ?', [
+    db.run('UPDATE note SET title = ?, deleted = ?, updated = ?, stamps = ? WHERE id = ?', [
       title ?? row.title,
       deleted === undefined ? row.deleted : deleted ? 1 : 0,
       op.created,
       JSON.stringify(next),
-      // A meta op from a client that does not know the field must not wipe it.
-      acknowledged === undefined ? row.acknowledged : JSON.stringify(acknowledged),
       op.note_id,
     ]);
   } else {
@@ -258,7 +251,7 @@ export function saveBody(db: Db, noteId: string, body: string): boolean {
 export function setNoteMeta(
   db: Db,
   noteId: string,
-  change: { title?: string; tags?: string[]; deleted?: boolean; acknowledged?: string[] },
+  change: { title?: string; tags?: string[]; deleted?: boolean },
 ): void {
   tx(db, () => {
     const note = db.get<Note>('SELECT * FROM note WHERE id = ?', [noteId]);
@@ -269,16 +262,8 @@ export function setNoteMeta(
       title: change.title ?? note.title,
       tags,
       deleted: change.deleted ?? note.deleted === 1,
-      acknowledged: change.acknowledged ?? parseAcknowledged(note),
     });
   });
-}
-
-/** Restoring is an ordinary edit: a new snapshot whose parent is the current head. */
-export function restoreVersion(db: Db, noteId: string, versionId: string): boolean {
-  const version = db.get<Version>('SELECT * FROM version WHERE id = ? AND note_id = ?', [versionId, noteId]);
-  if (!version) throw new Error(`unknown version ${versionId}`);
-  return saveBody(db, noteId, version.body);
 }
 
 export function addItem(

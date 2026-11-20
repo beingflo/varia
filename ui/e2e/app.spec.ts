@@ -166,24 +166,6 @@ test('reads an old version in the pane without writing one', async ({ page }) =>
   await page.keyboard.press('Escape');
 });
 
-test('keeping a version from history makes it the current text', async ({ page }) => {
-  await page.goto('/');
-  await ready(page);
-  await editor(page).fill('first draft');
-  await press(page, 's');
-  await editor(page).fill('second draft');
-  await press(page, 's');
-
-  await page.keyboard.press(`${MOD}+Shift+H`);
-  await page.locator('.vrow').last().click();
-  await page.getByRole('button', { name: 'keep this version' }).click();
-
-  await expectBody(page, 'first draft');
-  await page.keyboard.press(`${MOD}+Shift+H`);
-  await expect(page.locator('.vrow')).toHaveCount(3);
-  await page.keyboard.press('Escape');
-});
-
 test('runs a todo list: add, edit in place, check off with cmd, delete', async ({ page }) => {
   await page.goto('/');
   await ready(page);

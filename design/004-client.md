@@ -68,15 +68,12 @@ does; a static host needs the SPA fallback configured.
   saved or left is not written. If the body equals the current one, no op is written.
 - **Todos**: rows of checkbox + text, an always-present empty row at the bottom for appending,
   "show done" toggle (default off). Checking an item writes one `todo_item` op.
-- **History**: the version tree for a note, drawn git-style from `parent_id` (lanes, forks, closed
-  branches dimmed), read-only in a pane beside it, with per-item history for a todo item. Rows carry
-  id, time and state only; a version's body is fetched when it is selected, so a long history is one
-  small query. `keep this version` is the only write: it makes the text current and acknowledges the
-  other branches. Everything reads off the local log, so it works offline; todo lists have no versions.
-- **Divergence**: the note view names any head the user has not acknowledged yet and offers
-  `compare`. Dismissing is per branch and lives on the branch itself in the tree, so the user picks
-  which one to keep hearing about. The note view refreshes on `repo.onChange` — a pull can bring a
-  branch while the note is open — but never touches the document being typed into.
+- **History is read-only**: the version tree for a note, drawn git-style from `parent_id`, beside a
+  pane with the selected version's body, plus per-item history for a todo item. Rows carry id, time
+  and state only — no body, no snippet — and a version's body is fetched when it is selected, so a
+  long history is one small query. Nothing on this screen writes; restoring means copying text or
+  editing it in. Divergence has no UI state: the tree shows the fork, the note view says nothing.
+  Everything reads off the local log, so it works offline; todo lists have no versions.
 
 ### Todo lists
 

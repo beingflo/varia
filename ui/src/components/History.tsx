@@ -2,7 +2,7 @@ import { createEffect, createMemo, createResource, createSignal, For, onCleanup,
 import { useRepo } from '../db/context';
 import type { VersionMeta } from '../db/types';
 import { ago } from '../lib/time';
-import { parseAcknowledged, shortId } from '../lib/versions';
+import { shortId } from '../lib/versions';
 import { versionTree } from '../lib/versionTree';
 
 /** Row height and lane width in px: the graph is drawn from the same numbers the rows use. */
@@ -10,22 +10,13 @@ const ROW = 30;
 const LANE = 22;
 
 /**
- * The version tree of one note (design/002): one parent, many children, never a merge. Selection is
- * inert: the version is shown read-only next to the tree, and `keep this version` is the only write.
+ * The version tree of one note (design/002): one parent, many children, never a merge. This screen
+ * only reads: the selected version's body is shown beside the tree, and nothing here writes.
  */
-export default function History(props: {
-  noteId: string;
-  onClose: () => void;
-  onKept: () => void;
-  onChanged: () => void;
-}) {
+export default function History(props: { noteId: string; onClose: () => void }) {
   const repo = useRepo();
   const [versions] = createResource(() => props.noteId, (id) => repo.versions(id));
-  const [note, { refetch: refetchNote }] = createResource(() => props.noteId, (id) => repo.getNote(id));
-  const acknowledged = () => parseAcknowledged(note());
   const tree = createMemo(() => versionTree(versions() ?? []));
-  /** Leaves of the tree: more than one means two devices wrote from the same version. */
-  const branches = createMemo(() => tree().rows.filter((row) => row.children === 0));
 
   const [picked, setPicked] = createSignal<string | null>(null);
   const selected = createMemo<VersionMeta | undefined>(() => {
@@ -47,25 +38,6 @@ export default function History(props: {
     (list?.querySelector(`#v-${id}`) as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest' });
   });
 
-  // "I have seen this branch": it stays in the tree, the note simply stops asking about it.
-  const dismiss = async (headId: string) => {
-    await repo.setNoteMeta(props.noteId, { acknowledged: [...new Set([...acknowledged(), headId])] });
-    await refetchNote();
-    props.onChanged();
-  };
-
-  // Keeping a version is a snapshot on the current head, plus the bookkeeping that says the other
-  // branches have been dealt with. It writes nothing when the text is already the head's.
-  const keep = async () => {
-    const version = selected();
-    if (!version || version.id === current()) return;
-    const others = branches().filter((branch) => branch.id !== current()).map((branch) => branch.id);
-    await repo.restoreVersion(props.noteId, version.id);
-    await repo.setNoteMeta(props.noteId, { acknowledged: [...new Set([...acknowledged(), ...others])] });
-    props.onKept();
-    props.onClose();
-  };
-
   onMount(() => {
     list?.focus();
     const onKey = (event: KeyboardEvent) => {
@@ -84,10 +56,6 @@ export default function History(props: {
       else if (event.key === 'ArrowUp' || event.key === 'k') move(at - 1);
       else if (event.key === 'Home') move(0);
       else if (event.key === 'End') move(rows.length - 1);
-      else if (event.key === 'Enter') {
-        event.preventDefault();
-        void keep();
-      }
     };
     list?.addEventListener('keydown', onKey);
     // Escape must work before the list has focus, e.g. right after a click on the header.
@@ -105,10 +73,10 @@ export default function History(props: {
     <section class="overlay history" aria-label="history">
       <div class="history-head">
         <p class="muted small">
-          {tree().rows.length} versions · {tree().heads === 1 ? 'one branch' : `${tree().heads} branches`}
-          <Show when={tree().heads > 1}> · the newest is current</Show>
+          {tree().rows.length} versions
+          <Show when={tree().heads > 1}> · {tree().heads} heads, the newest is current</Show>
         </p>
-        <p class="muted small">↑↓ select · enter keep this version · esc close</p>
+        <p class="muted small">↑↓ select · esc close</p>
       </div>
 
       <div class="history-main">
@@ -132,12 +100,12 @@ export default function History(props: {
               const middle = (y0 + y1) / 2;
               const d =
                 x0 === x1 ? `M${x0} ${y0}L${x1} ${y1}` : `M${x0} ${y0}C${x0} ${middle} ${x1} ${middle} ${x1} ${y1}`;
-              return <path class="edge" classList={{ closed: !edge.live }} d={d} />;
+              return <path class="edge" d={d} />;
             }}
           </For>
           <For each={tree().rows}>
             {(row, index) => (
-              <g class="node" classList={{ closed: !row.live }}>
+              <g class="node">
                 <circle
                   cx={row.lane * LANE + LANE / 2}
                   cy={index() * ROW + ROW / 2}
@@ -159,10 +127,9 @@ export default function History(props: {
               role="listitem"
               aria-current={selected()?.id === row.id}
               class="vrow"
-              classList={{ selected: selected()?.id === row.id, closed: !row.live }}
+              classList={{ selected: selected()?.id === row.id }}
               style={{ height: `${ROW}px` }}
               onClick={() => setPicked(row.id)}
-              onDblClick={() => void keep()}
             >
               <span class="vid">{shortId(row.id)}</span>
               <span class="vwhen muted">{ago(row.created)}</span>
@@ -174,17 +141,6 @@ export default function History(props: {
               </Show>
               <Show when={row.children > 1}>
                 <span class="vtag muted-tag">fork</span>
-              </Show>
-              <Show when={row.children === 0 && !row.current && !acknowledged().includes(row.id)}>
-                <button
-                  class="vtag dismiss"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void dismiss(row.id);
-                  }}
-                >
-                  dismiss
-                </button>
               </Show>
             </div>
           )}
@@ -198,7 +154,6 @@ export default function History(props: {
               <>
                 {shortId(version().id)} · {ago(version().created)}
                 <Show when={isCurrent()}> · current</Show>
-                <Show when={!isCurrent() && !tree().rows.find((r) => r.id === version().id)?.live}> · closed branch</Show>
               </>
             )}
           </Show>
@@ -209,18 +164,6 @@ export default function History(props: {
       </aside>
       </div>
 
-      <div class="history-bar">
-        <span class="muted small">
-          <Show when={selected()} fallback="nothing selected">
-            {isCurrent() ? 'this is the current version' : 'keeping writes a new version on top of the current one'}
-          </Show>
-        </span>
-        <div class="actions">
-          <button class="btn primary" disabled={!selected() || isCurrent()} onClick={() => void keep()}>
-            keep this version
-          </button>
-        </div>
-      </div>
     </section>
   );
 }

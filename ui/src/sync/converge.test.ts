@@ -1,5 +1,5 @@
 // @vitest-environment node
-// Two devices, one note, a checkout branch, a restore and a dismissal: whatever A has, B ends up
+// Two devices, one note: whatever A has, B ends up
 // with, including the parent links the graph is drawn from.
 import { describe, expect, it } from 'vitest';
 import { testRepo } from '../db/inProcess';
@@ -57,10 +57,8 @@ describe('convergence', () => {
     // Both devices write from the same head while offline: a fork, no merge.
     await a.saveBody(id, 'from a');
     await b.saveBody(id, 'from b');
-    // Restore an old version as the current text (a snapshot on the head).
-    await a.restoreVersion(id, (await a.versions(id))[2].id);
-    // Dismiss bookkeeping rides along in note_meta.
-    await a.setNoteMeta(id, { acknowledged: [(await a.heads(id))[0].id] });
+    // A third version on A, written while B's branch is open.
+    await a.saveBody(id, 'from a again');
 
     const sent = await syncNow({ repo: a, key, token: 't', transport: server.transport });
     expect(sent.skipped).toBe(0);
@@ -77,7 +75,6 @@ describe('convergence', () => {
 
     expect(await shape(b, id)).toEqual(await shape(a, id));
     expect(await b.versions(id)).toHaveLength((await a.versions(id)).length);
-    expect((await b.getNote(id))?.acknowledged).toBe((await a.getNote(id))?.acknowledged);
   });
 
   it('a device that pushes nothing still gets every op of a large backlog', async () => {

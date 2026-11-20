@@ -89,7 +89,11 @@ const migration2 = `ALTER TABLE todo_item ADD COLUMN depth INTEGER NOT NULL DEFA
 // Heads a user has already looked at or decided about: divergence bookkeeping, not history.
 const migration3 = `ALTER TABLE note ADD COLUMN acknowledged TEXT NOT NULL DEFAULT '[]';`;
 
-const migrations: string[] = [migration1, migration2, migration3];
+// Divergence has no UI state: the tree shows it, the user resolves it by editing. Drop the column
+// that used to hold the acknowledged head ids.
+const migration4 = `ALTER TABLE note DROP COLUMN acknowledged;`;
+
+const migrations: string[] = [migration1, migration2, migration3, migration4];
 
 export function migrate(db: Db): void {
   const row = db.get<{ user_version: number }>('PRAGMA user_version');

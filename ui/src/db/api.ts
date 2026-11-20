@@ -14,14 +14,10 @@ export interface Handlers {
   getNote(id: string): Note | undefined;
   createNote(kind: NoteKind, title?: string): string;
   saveBody(noteId: string, body: string): boolean;
-  setNoteMeta(
-    noteId: string,
-    change: { title?: string; tags?: string[]; deleted?: boolean; acknowledged?: string[] },
-  ): void;
+  setNoteMeta(noteId: string, change: { title?: string; tags?: string[]; deleted?: boolean }): void;
   versions(noteId: string): VersionMeta[];
   versionBody(noteId: string, versionId: string): string | undefined;
   heads(noteId: string): VersionHead[];
-  restoreVersion(noteId: string, versionId: string): boolean;
   items(noteId: string, showDone?: boolean): Item[];
   addItem(noteId: string, text: string, itemId?: string, depth?: number, ordering?: number): string;
   toggleItem(itemId: string): void;
