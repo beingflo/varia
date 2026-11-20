@@ -7,6 +7,10 @@ import type { Db } from './types';
 type Request = { id: number; method: string; args: unknown[] };
 
 let handlers: ReturnType<typeof createHandlers> | null = null;
+// Boot fires several calls before the wasm has loaded; each one would otherwise start its own
+// init — a second connection, a second openDb, and a window where the lamport clock resets to 0.
+let ready: Promise<void> | null = null;
+const ensureReady = () => (ready ??= init());
 
 async function init(): Promise<void> {
   const sqlite3 = await sqlite3InitModule();
@@ -25,7 +29,7 @@ async function init(): Promise<void> {
 
 self.onmessage = async ({ data }: MessageEvent<Request>) => {
   try {
-    if (!handlers) await init();
+    if (!handlers) await ensureReady();
     const handler = (handlers as unknown as Record<string, (...args: unknown[]) => unknown>)[data.method];
     if (!handler) throw new Error(`unknown method ${data.method}`);
     self.postMessage({ id: data.id, result: handler(...data.args) });

@@ -103,11 +103,11 @@ input[type='search']::-webkit-search-cancel-button { display: none; }
   /* The base overlay centres a 74ch column; history is a two-pane screen and uses the width. */
   padding-block: 1.25rem 0; padding-inline: 0;
 }
-.history-head { width: 100%; max-width: 96rem; margin-inline: auto; padding-inline: clamp(1rem, 2vw, 2rem); }
+.history-head { width: 100%; max-width: 112rem; margin-inline: auto; padding-inline: clamp(1rem, 2vw, 2rem); }
 /* Tree, the version itself and its diff against its parent: none of the three hides another. */
 .history-main {
   display: grid; grid-template-columns: max-content minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem;
-  width: 100%; max-width: 96rem; margin-inline: auto; padding-inline: clamp(1rem, 2vw, 2rem);
+  width: 100%; max-width: 112rem; margin-inline: auto; padding-inline: clamp(1rem, 2vw, 2rem);
   flex: 1 1 auto; min-height: 0;
 }
 /* Its own scroll, and it must not hand the wheel to the page behind it at the ends. */

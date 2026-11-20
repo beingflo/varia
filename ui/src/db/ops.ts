@@ -20,7 +20,11 @@ export function titleFromBody(body: string): string {
   return title.length > 120 ? `${title.slice(0, 120)}…` : title;
 }
 
-/** Midpoint for inserting between two fractional orderings, without renumbering. */
+/**
+ * Midpoint for inserting between two fractional orderings, without renumbering.
+ * shortcut: ~45 inserts into the same slot exhaust double precision and the row then lands after
+ * `next`; renumber the siblings locally if a list ever gets that dense in one place
+ */
 export function between(prev: number | null, next: number | null): number {
   if (prev === null && next === null) return 1;
   if (prev === null) return (next as number) - 1;
