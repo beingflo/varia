@@ -121,7 +121,13 @@ impl Store {
         }
         tx.commit()?;
         // Sequences are handed out in insert order, so the highest one this call wrote is base + stored.
-        Ok(PushOutcome { stored, usage, cap_reached, written: if stored > 0 { base + stored as i64 } else { 0 } })
+        Ok(PushOutcome {
+            stored,
+            usage,
+            cap_reached,
+            written: if stored > 0 { base + stored as i64 } else { 0 },
+            base,
+        })
     }
 
     /// Ops after `cursor`, in server order. `limit + 1` rows are fetched to learn whether more wait.
@@ -171,6 +177,9 @@ pub struct PushOutcome {
     pub cap_reached: bool,
     /// Highest sequence this call wrote, so the caller can pull only what it did not just send.
     pub written: i64,
+    /// Highest sequence before this call. A client whose cursor is at or above it had seen every
+    /// op that existed, so skipping past its own writes is safe.
+    pub base: i64,
 }
 
 pub fn now() -> i64 {

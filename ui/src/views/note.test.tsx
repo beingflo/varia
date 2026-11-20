@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor } from '@solidjs/testing-library';
+import { createSignal } from 'solid-js';
 import { describe, expect, it, vi } from 'vitest';
 import { testRepo } from '../db/inProcess';
 import { runCommand } from '../lib/commands';
@@ -73,7 +74,7 @@ describe('Note view', () => {
 
     runCommand('save'); // the body is not on screen yet
     await new Promise((r) => setTimeout(r, 120));
-    expect((await repo.versions(id)).map((v) => v.snippet)).toEqual(['content']);
+    expect((await repo.versions(id)).map((v) => v.id)).toHaveLength(1);
   });
 
   it('saves on blur, not while typing', async () => {
@@ -88,6 +89,76 @@ describe('Note view', () => {
 
     fireEvent.blur(editor);
     await waitFor(async () => expect(await repo.versions(id)).toHaveLength(1));
+  });
+
+  it('takes a pulled version instead of re-committing the text on screen', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('note');
+    await repo.saveBody(id, 'local');
+    renderWithRepo(() => <NoteView id={id} />, repo);
+    await waitFor(() => expect(screen.getByLabelText('note body')).toHaveProperty('value', 'local'));
+
+    // Another device's snapshot wins the lamport race while the editor is clean.
+    await repo.applyRemote([
+      {
+        device: 'dev-b',
+        id: 'op-remote',
+        kind: 'note_snapshot',
+        note_id: id,
+        lamport: 99,
+        created: Date.now(),
+        payload: { version_id: 'version-remote', parent_version_id: null, body: 'from the other device' },
+      },
+    ]);
+
+    runCommand('save'); // a flush on the clean editor, as sync and blur send
+    await waitFor(() => expect(screen.getByLabelText('note body')).toHaveProperty('value', 'from the other device'));
+    expect((await repo.versions(id)).map((v) => v.id)).toHaveLength(2);
+    expect((await repo.getNote(id))!.body).toBe('from the other device');
+  });
+
+  it('keeps local text when it was edited and a version arrives', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('note');
+    await repo.saveBody(id, 'local');
+    renderWithRepo(() => <NoteView id={id} />, repo);
+    const editor = await screen.findByLabelText('note body');
+    await waitFor(() => expect(editor).toHaveProperty('value', 'local'));
+    fireEvent.input(editor, { target: { value: 'my own edit' } });
+
+    await repo.applyRemote([
+      {
+        device: 'dev-b',
+        id: 'op-remote',
+        kind: 'note_snapshot',
+        note_id: id,
+        lamport: 99,
+        created: Date.now(),
+        payload: { version_id: 'version-remote', parent_version_id: null, body: 'theirs' },
+      },
+    ]);
+    fireEvent.blur(editor);
+    await waitFor(async () => expect(await repo.versions(id)).toHaveLength(3));
+    expect((await repo.getNote(id))!.body).toBe('my own edit');
+    expect(await repo.heads(id)).toHaveLength(2);
+  });
+
+  it('writes one version for two flushes of the same text', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('note');
+    renderWithRepo(() => <NoteView id={id} />, repo);
+
+    const editor = await screen.findByLabelText('note body');
+    fireEvent.input(editor, { target: { value: 'typed once' } });
+    // A blur and the save command land back to back, before either write resolves: both capture
+    // the same text and the same (stale) baseline.
+    fireEvent.blur(editor);
+    runCommand('save');
+    runCommand('save');
+
+    await waitFor(async () => expect(await repo.versions(id)).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 100));
+    expect((await repo.getNote(id))!.body).toBe('typed once');
   });
 
   it('writes no new version when nothing changed', async () => {
@@ -106,7 +177,7 @@ describe('Note view', () => {
     expect(await repo.versions(id)).toHaveLength(1);
   });
 
-  it('opens history, checks an old version out, and writes only when edited', async () => {
+  it('shows the selected version read-only and writes nothing until keep', async () => {
     const repo = testRepo();
     const id = await repo.createNote('note');
     await repo.saveBody(id, 'first');
@@ -120,22 +191,69 @@ describe('Note view', () => {
       return found;
     });
     fireEvent.click(rows[1]); // the older one
-    fireEvent.click(screen.getByText('open in editor'));
 
-    // Checkout is not a write: the history is still two versions, and so is the database.
-    await waitFor(() => expect(screen.getByLabelText('note body')).toHaveProperty('value', 'first'));
+    // The preview follows the selection; browsing writes nothing.
+    await waitFor(() => expect(document.querySelector('.version-body')?.textContent).toBe('first'));
     expect(await repo.versions(id)).toHaveLength(2);
     expect((await repo.getNote(id))!.body).toBe('second');
+    expect(screen.getByLabelText('note body')).toHaveProperty('value', 'second');
+  });
 
-    // The first edit branches from the checked-out version instead of continuing the head.
-    fireEvent.input(screen.getByLabelText('note body'), { target: { value: 'first, edited' } });
-    fireEvent.blur(screen.getByLabelText('note body'));
-    await waitFor(async () => expect(await repo.versions(id)).toHaveLength(3));
-    const versions = await repo.versions(id);
-    const edited = versions.find((version) => version.snippet === 'first, edited')!;
-    const first = versions.find((version) => version.snippet === 'first')!;
-    expect(edited.parent_id).toBe(first.id);
-    expect(await repo.heads(id)).toHaveLength(2);
+  it('loads one body per selected version, not the whole history', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('note');
+    for (let n = 1; n <= 30; n += 1) await repo.saveBody(id, `version ${n}`);
+    const seen: string[] = [];
+    const versionBody = repo.versionBody.bind(repo);
+    repo.versionBody = async (noteId, versionId) => {
+      seen.push(versionId);
+      return versionBody(noteId, versionId);
+    };
+    // Freeze the clock out of it: every snapshot here lands in the same millisecond.
+    renderWithRepo(() => <NoteView id={id} />, repo);
+    runCommand('history');
+
+    const rows = await waitFor(() => {
+      const found = document.querySelectorAll('.vrow');
+      expect(found.length).toBe(30);
+      return found;
+    });
+    await waitFor(() => expect(document.querySelector('.version-body')?.textContent).toBe('version 30'));
+    expect(seen).toHaveLength(1);
+
+    fireEvent.click(rows[1]);
+    await waitFor(() => expect(document.querySelector('.version-body')?.textContent).toBe('version 29'));
+    expect(seen).toHaveLength(2);
+  });
+
+  it('shows the branch hint only on the note that has one', async () => {
+    const repo = testRepo();
+    const forked = await repo.createNote('note');
+    await repo.saveBody(forked, 'a');
+    const root = (await repo.versions(forked))[0];
+    await repo.saveBody(forked, 'b');
+    await repo.applyRemote([
+      {
+        device: 'dev-b',
+        id: 'op-branch',
+        kind: 'note_snapshot',
+        note_id: forked,
+        lamport: 99,
+        created: Date.now(),
+        payload: { version_id: 'version-branch', parent_version_id: root.id, body: 'c' },
+      },
+    ]); // a second head on this note only
+    const other = await repo.createNote('note');
+    await repo.saveBody(other, 'elsewhere');
+
+    const [id, setId] = createSignal<string | undefined>(forked);
+    renderWithRepo(() => <NoteView id={id()} />, repo);
+    await waitFor(() => expect(screen.getByText(/other branch/)).toBeTruthy());
+
+    setId(other);
+    await waitFor(() => expect(screen.queryByText(/other branch/)).toBeNull());
+    setId(undefined); // ⌘E: a fresh draft has no branches either
+    expect(screen.queryByText(/other branch/)).toBeNull();
   });
 
   it('keeps a version from history as the current text and clears the branch', async () => {
@@ -166,15 +284,27 @@ describe('Note view', () => {
     await repo.saveBody(id, 'a');
     const root = (await repo.versions(id))[0];
     await repo.saveBody(id, 'b'); // head
-    await repo.saveBody(id, 'c', root.id); // a second head from the same version
+    await repo.applyRemote([
+      {
+        device: 'dev-b',
+        id: 'op-branch',
+        kind: 'note_snapshot',
+        note_id: id,
+        lamport: 99,
+        created: Date.now(),
+        payload: { version_id: 'version-branch', parent_version_id: root.id, body: 'c' },
+      },
+    ]); // a second head from the same version
     expect(await repo.heads(id)).toHaveLength(2);
 
     renderWithRepo(() => <NoteView id={id} />, repo);
 
     const notice = await waitFor(() => screen.getByText(/other branch/));
     expect(notice.textContent).toContain('c');
-    fireEvent.click(screen.getByText('dismiss'));
+    fireEvent.click(screen.getByText('compare'));
 
+    // The branch itself carries the dismiss button; dismissing it clears the note's banner.
+    fireEvent.click(await waitFor(() => screen.getByText('dismiss')));
     await waitFor(() => expect(screen.queryByText(/other branch/)).toBeNull());
     const note = await repo.getNote(id);
     expect(JSON.parse(note!.acknowledged)).toHaveLength(1);

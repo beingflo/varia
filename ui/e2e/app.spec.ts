@@ -144,7 +144,7 @@ test('deletes the open note', async ({ page }) => {
   await expect(page.getByText('nothing yet')).toBeVisible();
 });
 
-test('opens an old version from history without writing a version', async ({ page }) => {
+test('reads an old version in the pane without writing one', async ({ page }) => {
   await page.goto('/');
   await ready(page);
   await editor(page).fill('first draft');
@@ -156,12 +156,11 @@ test('opens an old version from history without writing a version', async ({ pag
   const rows = page.locator('.vrow');
   await expect(rows).toHaveCount(2);
   await rows.last().click();
-  await page.getByRole('button', { name: 'open in editor' }).click();
+  await expect(page.locator('.version-body')).toHaveText('first draft');
 
-  await expectBody(page, 'first draft');
-  await expect(page.getByText(/viewing/)).toBeVisible();
-
-  // A checkout is not a write: history is still two versions, and the note still holds the head.
+  // Reading is not a write: the editor still holds the head, and history is still two versions.
+  await page.keyboard.press('Escape');
+  await expectBody(page, 'second draft');
   await page.keyboard.press(`${MOD}+Shift+H`);
   await expect(page.locator('.vrow')).toHaveCount(2);
   await page.keyboard.press('Escape');

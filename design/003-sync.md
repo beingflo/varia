@@ -128,6 +128,13 @@ was such a disagreement. Three rules remove the class instead of patching instan
 - **Compared with the server's head.** Every response carries `head`, the highest `server_seq` in the
   account. If it is *below* our cursor, the server has lost ops (a restored backup, a wiped table).
   The client rewinds the outbox, re-pushes its whole log, and pulls from zero.
+- **A push never skips what it did not see.** The pull floor skips a request's own writes only when
+  the client was caught up before pushing (`cursor >= base`). A device that was behind — two devices
+  writing while offline — gets the ops in between in the same response, or its new cursor would sit
+  above ops it never received. That was a real loss: a child version arrived without its parent.
+- **Repair is explicit.** `re-pull the log` in the sync panel forgets the cursor for the account and
+  keeps every op and its pushed flag; the next sync re-applies the whole log, which is idempotent
+  (`op_seen`, `INSERT OR IGNORE`). The way out of a database that sat above a hole.
 
 A content hash would only add detection of *reordering* by an operator who can already serve garbage;
 ordering does not affect the result, because conflicts are decided by lamport stamps inside the ops.

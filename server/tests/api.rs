@@ -130,6 +130,21 @@ async fn pushes_are_ordered_and_pulled_once_per_cursor() {
 }
 
 #[tokio::test]
+async fn a_push_from_behind_still_gets_the_ops_in_between() {
+    let app = app();
+    let token = signup(&app, "10.0.0.1").await;
+
+    // Device A pushes two ops; device B has never pulled and now pushes one of its own.
+    send(&app, sync_request(&token, 0, vec![op(0, &payload(1)), op(1, &payload(2))])).await;
+    let (_, _, body) = send(&app, sync_request(&token, 0, vec![op(2, &payload(3))])).await;
+
+    let ids: Vec<&str> = body["ops"].as_array().unwrap().iter().map(|o| o["id"].as_str().unwrap()).collect();
+    assert!(ids.contains(&"op-0"), "ops below this device's own push must come back: {ids:?}");
+    assert!(ids.contains(&"op-1"), "ops below this device's own push must come back: {ids:?}");
+    assert!(body["cursor"].as_i64().unwrap() >= 3);
+}
+
+#[tokio::test]
 async fn a_retried_push_is_ignored() {
     let app = app();
     let token = signup(&app, "10.0.0.1").await;

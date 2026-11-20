@@ -52,14 +52,22 @@ export default function Sync(props: { onClose: () => void }) {
 
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') props.onClose();
-      // The enrolled view has nothing to type into, so Enter is the manual sync.
-      if (e.key === 'Enter' && sync.enrolled() && !fresh() && !busy() && document.activeElement !== field) {
-        void sync.run('manual');
+      if (e.key === 'Escape') {
+        props.onClose();
+        return;
       }
+      // The enrolled view has nothing to type into, so Enter is the manual sync.
+      if (e.key !== 'Enter' || !sync.enrolled() || fresh() || busy()) return;
+      // Focus stays in the note behind this overlay: an unclaimed Enter would open a new line
+      // there, and the flush before the sync would save that as a version of the note.
+      const active = document.activeElement as HTMLElement | null;
+      if (active && active !== document.body && active.closest('.overlay')) return;
+      e.preventDefault();
+      void sync.run('manual');
     };
-    window.addEventListener('keydown', onKey);
-    onCleanup(() => window.removeEventListener('keydown', onKey));
+    // Capture phase: CodeMirror handles Enter on its own element first otherwise.
+    window.addEventListener('keydown', onKey, true);
+    onCleanup(() => window.removeEventListener('keydown', onKey, true));
     if (sync.enrolled()) void sync.run('manual');
     else field?.focus(); // the only thing to do here is paste the two secrets
   });
@@ -154,6 +162,12 @@ export default function Sync(props: { onClose: () => void }) {
       </Show>
       <p class="muted small">press Enter to sync now, Escape to close</p>
       {secret('Token — this account on the server. The key that decrypts it is not stored here.', sync.token())}
+      <p class="separator muted small">
+        re-pull the whole log: fills a version that never arrived, applies only what is missing
+      </p>
+      <button type="button" class="action" disabled={busy()} onClick={() => void attempt(() => sync.repair())}>
+        re-pull the log
+      </button>
       <p class="separator muted small">stop syncing this device; every note stays where it is</p>
       <button
         type="button"

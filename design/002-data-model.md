@@ -62,15 +62,14 @@ the materialised tables is authoritative: it can be dropped and rebuilt.
 IS NOT NULL)`. One indexed query, no recursion.
 - **Current body** is the head with the highest `(lamport, device)`. With two heads, the lower one
   stays reachable in history and the note view says so.
-- **Checking a version out writes nothing.** The editor shows that version's body, and the note's own
-  row keeps pointing at the head. The first edit after a checkout is a normal snapshot whose parent
-  is the checked-out version: it becomes current by lamport, and the version it left is still a head.
-  No merge op exists and none is planned, so both branches stay in the tree for good. A reload or a
-  navigation drops the checkout and the head's body comes back.
-- **Keeping a version** (`keep this version`, or a plain restore) is a snapshot whose parent is the
-  *current head* and whose body is the chosen one. History stays a single line: the passed-over text
-  remains as an ancestor. It also records the other heads in `note_meta.acknowledged`, which is what
-  clears the divergence badge — the branches themselves never disappear.
+- **Reading history writes nothing.** The tree lists ids and times only; a version's body is fetched
+  when it is selected (`versionBody`), so a long history costs one small query, not one body per row.
+- **Keeping a version** (`keep this version`, the only write on that screen) is a snapshot whose parent
+  is the *current head* and whose body is the chosen one. History stays a single line: the passed-over
+  text remains as an ancestor. It also records the other heads in `note_meta.acknowledged`, which is
+  what clears the divergence badge — the branches themselves never disappear.
+- **Branches only come from divergence.** With no checkout, a second head appears only when another
+  device wrote from the same version (design/003); no merge op exists and none is planned.
 - **Acknowledged heads** are bookkeeping, not history: the ids live in `note_meta` and sync, so a
   branch dismissed on one device stops asking everywhere. A new branch always asks again.
 

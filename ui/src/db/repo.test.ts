@@ -95,7 +95,7 @@ describe('notes', () => {
 
     expect(repo.heads(db, id)).toHaveLength(2);
     expect(repo.getNote(db, id)!.body).toBe('theirs');
-    expect(repo.versions(db, id).map((v) => v.snippet)).toEqual(['theirs', 'mine']);
+    expect(repo.versions(db, id).map((v) => repo.versionBody(db, id, v.id))).toEqual(['theirs', 'mine']);
   });
 
   it('ignores a snapshot that loses the lamport race', () => {

@@ -50,14 +50,13 @@ export interface Version {
   created: number;
 }
 
-/** A version as history shows it: no body, only a snippet, so the tree stays cheap to load. */
+/** A version as history shows it: no body, so the tree stays cheap to load however long it is. */
 export interface VersionMeta {
   id: string;
   parent_id: string | null;
   lamport: number;
   device: string;
   created: number;
-  snippet: string;
 }
 
 export interface VersionHead {

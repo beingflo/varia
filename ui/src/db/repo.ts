@@ -239,23 +239,16 @@ export function createNote(db: Db, kind: NoteKind, title = ''): string {
   });
 }
 
-/**
- * Writes a snapshot only when the body differs from the current one; returns whether it wrote.
- * `parentId` names the version this text was written from: an edit after checking out an old
- * version branches there instead of continuing from the head (design/002).
- */
-export function saveBody(db: Db, noteId: string, body: string, parentId?: string): boolean {
+/** Writes a snapshot only when the body differs from the current one; returns whether it wrote. */
+export function saveBody(db: Db, noteId: string, body: string): boolean {
   return tx(db, () => {
     const note = db.get<Note>('SELECT * FROM note WHERE id = ?', [noteId]);
     if (!note) throw new Error(`unknown note ${noteId}`);
     if (note.kind !== 'note') throw new Error(`note ${noteId} is a ${note.kind}`);
-    if (parentId && !db.get('SELECT 1 FROM version WHERE id = ? AND note_id = ?', [parentId, noteId])) {
-      throw new Error(`unknown version ${parentId} on note ${noteId}`);
-    }
     if (note.body === body) return false;
     appendOp(db, 'note_snapshot', noteId, {
       version_id: crypto.randomUUID(),
-      parent_version_id: parentId ?? headVersionId(db, noteId),
+      parent_version_id: headVersionId(db, noteId),
       body,
     });
     return true;
@@ -378,7 +371,9 @@ export function listNotes(db: Db, filter: { tag?: string; q?: string; kind?: Not
 
 export function versions(db: Db, noteId: string): VersionMeta[] {
   return db.all<VersionMeta>(
-    `SELECT id, parent_id, lamport, device, created, substr(body, 1, 160) AS snippet
+    // No body here: history rows only need the shape of the tree, and a long note would otherwise
+    // read every version's text just to list ids.
+    `SELECT id, parent_id, lamport, device, created
        FROM version WHERE note_id = ? ORDER BY lamport DESC, device DESC`,
     [noteId],
   );
@@ -503,6 +498,17 @@ export function resetSync(db: Db): void {
  * Applies a pulled page and advances the pull cursor in one transaction, so the two can never
  * disagree: a crash cannot leave the cursor ahead of the ops it stands for.
  */
+/**
+ * Forgets the pull position of one account, keeping every op and its pushed flag: the next sync
+ * re-pulls the whole log, which fills any hole a skipped op left behind. Applying is idempotent.
+ */
+export function resetCursor(db: Db, account: string): void {
+  tx(db, () => {
+    if (meta(db, 'cursor_account') !== account) return;
+    setMetaValue(db, 'cursor', '0');
+  });
+}
+
 export function applyRemotePage(db: Db, ops: Op[], cursor: number, account: string): number {
   return tx(db, () => {
     let applied = 0;

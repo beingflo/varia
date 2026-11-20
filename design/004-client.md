@@ -57,6 +57,11 @@ does; a static host needs the SPA fallback configured.
   sync see exactly what a textarea would have written. The syntax highlighting is the reading aid: a
   separate rendered view is not planned. Vim mode is a possible later addition (`PLAN.md`), the reason
   CodeMirror was chosen over a hand-rolled editor or a WYSIWYG model.
+- **Pulled versions**: a flush on a clean editor is not an edit. When the text on screen equals the
+  last saved text, the flush takes the database's body instead of re-committing the old one, so a
+  pull cannot be turned into a local version by the next blur or sync.
+- **The sync overlay** claims Enter in the capture phase, so the key cannot open a new line in the
+  note that still has focus behind it.
 - **Snapshotting**: typing writes nothing. A snapshot op is committed when the editor loses focus,
   on `⌘S`, before the note list or another note is opened, before history opens, on `⌘D`/`⌘E`/`⌘⇧E`,
   and on `visibilitychange → hidden`. There is no idle timer: a note that is typed and never blurred,
@@ -64,13 +69,14 @@ does; a static host needs the SPA fallback configured.
 - **Todos**: rows of checkbox + text, an always-present empty row at the bottom for appending,
   "show done" toggle (default off). Checking an item writes one `todo_item` op.
 - **History**: the version tree for a note, drawn git-style from `parent_id` (lanes, forks, closed
-  branches dimmed), with per-item history for a todo item. Selection is inert; `open in editor`
-  checks a version out without writing, `keep this version` makes it current and acknowledges the
-  other branches. Bodies are fetched per version, so opening history does not ship a note's whole
-  history. Everything reads off the local log, so it works offline; todo lists have no versions.
-- **Divergence**: the note view names any head the user has not acknowledged yet, with `compare`
-  (opens history) and `dismiss` (acknowledges it). It refreshes on `repo.onChange` — a pull can bring
-  a branch while the note is open — but never touches the document being typed into.
+  branches dimmed), read-only in a pane beside it, with per-item history for a todo item. Rows carry
+  id, time and state only; a version's body is fetched when it is selected, so a long history is one
+  small query. `keep this version` is the only write: it makes the text current and acknowledges the
+  other branches. Everything reads off the local log, so it works offline; todo lists have no versions.
+- **Divergence**: the note view names any head the user has not acknowledged yet and offers
+  `compare`. Dismissing is per branch and lives on the branch itself in the tree, so the user picks
+  which one to keep hearing about. The note view refreshes on `repo.onChange` — a pull can bring a
+  branch while the note is open — but never touches the document being typed into.
 
 ### Todo lists
 

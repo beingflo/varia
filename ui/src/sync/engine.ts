@@ -3,7 +3,7 @@
 import { createSignal } from 'solid-js';
 import type { Repo } from '../db/api';
 import { flushAll } from '../lib/flush';
-import { formatRootKey, newRootKey, opKey, parseRootKey } from './crypto';
+import { accountTag, formatRootKey, newRootKey, opKey, parseRootKey } from './crypto';
 import { syncNow } from './client';
 import { httpTransport, SyncError } from './http';
 import type { Account, AccountStore } from './keystore';
@@ -131,6 +131,14 @@ export function createEngine(options: {
    * Forgets the account, keeping every note. The op log goes back to being an outbox, so the whole
    * local history can be pushed to a different account afterwards.
    */
+  /** Re-pull the account's whole log: idempotent, and the way out of a cursor that skipped an op. */
+  async function repair(): Promise<void> {
+    const current = accountToken();
+    if (!current) return;
+    await repo.resetCursor(await accountTag(current));
+    await run('repair');
+  }
+
   async function unlink(): Promise<void> {
     await store.clear();
     await repo.resetSync();
@@ -188,5 +196,5 @@ export function createEngine(options: {
     listeners.splice(0).forEach((off) => off());
   }
 
-  return { status, enrolled, token: accountToken, start, stop, run, signup, enrol, unlink, refreshPending };
+  return { status, enrolled, token: accountToken, start, stop, run, signup, enrol, unlink, repair, refreshPending };
 }

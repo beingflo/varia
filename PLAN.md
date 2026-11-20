@@ -58,7 +58,6 @@ the readiness marker the browser tests wait on.
       cannot drift from the keys that work). `/` is the landing until `varia:entered` is set by
       "use now" or by the app itself, then the app; a deep link or `/app` (the installed `start_url`)
       goes straight to the app. The app is a dynamic import, so the landing never loads the worker.
-- [ ] landing copy: rewrite the feature text and settle the section order
 - [ ] iOS install flow and first-run guidance
 - [ ] inline sync status next to the note stamp (the `⌘⇧S` overlay already shows it)
 - [ ] eviction recovery: token present + empty database → full re-pull from cursor 0
@@ -81,6 +80,7 @@ the readiness marker the browser tests wait on.
 - [ ] warn when changes have been unsynced for days
 - [ ] token revocation and multiple tokens per account
 - [ ] todo reminders
+- [ ] landing copy: rewrite the feature text and settle the section order
 - [ ] drag and drop for list items, with the bullet as the grab handle: pointer-based (no library),
       y picks the target row, x picks the depth, edge autoscroll, plus ⌥↑/⌥↓ to move and ⌥→/⌥← to
       nest for keyboard parity. A move is one existing `todo_item` op carrying `ordering` and

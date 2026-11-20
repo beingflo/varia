@@ -13,7 +13,7 @@ export interface Handlers {
   listNotes(filter?: NoteFilter): NoteSummary[];
   getNote(id: string): Note | undefined;
   createNote(kind: NoteKind, title?: string): string;
-  saveBody(noteId: string, body: string, parentId?: string): boolean;
+  saveBody(noteId: string, body: string): boolean;
   setNoteMeta(
     noteId: string,
     change: { title?: string; tags?: string[]; deleted?: boolean; acknowledged?: string[] },
@@ -35,6 +35,7 @@ export interface Handlers {
   markPushed(ops: { id: string }[]): void;
   applyRemote(ops: Op[]): number;
   syncCursor(account: string): number;
+  resetCursor(account: string): void;
   applyRemotePage(ops: Op[], cursor: number, account: string): number;
   resetSync(): void;
   debugTables(): DebugTable[];

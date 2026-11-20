@@ -8,7 +8,6 @@ const version = (id: string, parent: string | null, lamport: number, device = 'd
   lamport,
   device,
   created: 1_700_000_000_000 + lamport,
-  snippet: id,
 });
 
 describe('versionTree', () => {

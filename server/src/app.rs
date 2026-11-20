@@ -185,8 +185,15 @@ async fn sync(
     // Pull what the client is missing. Always allowed, even over the cap: a full account must be
     // able to rescue its data.
     let limit = state.cfg.pull_limit;
-    // Do not hand back what this very request just wrote.
-    let floor = request.cursor.max(0).max(pushed.written);
+    // Do not hand back what this very request just wrote — but only when the client was already
+    // caught up before pushing. A client that was behind (two devices writing while offline) has
+    // unseen ops in between: jumping the floor to its own last sequence would hide them for good,
+    // because the cursor it stores afterwards sits above them.
+    let floor = if request.cursor >= pushed.base {
+        request.cursor.max(pushed.written)
+    } else {
+        request.cursor.max(0)
+    };
     let mut ops = state.store.pull(&owner, floor, limit + 1)?;
     let more = ops.len() > limit;
     ops.truncate(limit);

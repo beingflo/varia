@@ -12,6 +12,7 @@ function fakeServer() {
   const stored: (WireOp & { server_seq: number })[] = [];
   const seen = new Set<string>();
   const transport: Transport = async (_token, { cursor, ops }) => {
+    const base = stored.length;
     let written = 0;
     for (const op of ops) {
       const key = op.id;
@@ -20,7 +21,8 @@ function fakeServer() {
       stored.push({ ...op, server_seq: stored.length + 1 });
       written = stored.length;
     }
-    const floor = Math.max(cursor, written);
+    // Skip past this request's own writes only if the client was caught up before pushing.
+    const floor = cursor >= base ? Math.max(cursor, written) : cursor;
     const page = stored.filter((op) => op.server_seq > floor).slice(0, 2);
     const response: SyncResponse = {
       ops: page,
