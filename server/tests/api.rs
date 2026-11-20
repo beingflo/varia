@@ -144,6 +144,23 @@ async fn a_retried_push_is_ignored() {
 }
 
 #[tokio::test]
+async fn pull_reports_the_head_so_a_client_can_notice_a_lost_log() {
+    let app = app();
+    let token = signup(&app, "10.0.0.1").await;
+    let (_, _, body) = send(&app, sync_request(&token, 0, vec![])).await;
+    assert_eq!(body["head"], 0);
+
+    send(&app, sync_request(&token, 0, vec![op(0, &payload(1)), op(1, &payload(2))])).await;
+    let (_, _, body) = send(&app, sync_request(&token, 0, vec![])).await;
+    assert_eq!(body["head"], 2);
+
+    // A full pull does not move the head: the head is the log, not the page.
+    let (_, _, body) = send(&app, sync_request(&token, 2, vec![])).await;
+    assert_eq!(body["head"], 2);
+    assert_eq!(body["ops"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
 async fn identity_is_the_op_id_and_never_the_device() {
     let app = app();
     let token = signup(&app, "10.0.0.1").await;

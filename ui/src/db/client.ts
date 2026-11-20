@@ -2,7 +2,7 @@
 // views (and the sync trigger) never depend on a BroadcastChannel echo that never arrives.
 import type { Handlers, Repo } from './api';
 
-// Data writes only: sync bookkeeping (`markPushed`, `setSyncCursor`) must not look like a local edit,
+// Data writes only: sync bookkeeping (`markPushed`, `applyRemotePage`) must not look like a local edit,
 // or every sync would schedule the next one.
 const WRITES = new Set<keyof Handlers>([
   'createNote', 'saveBody', 'setNoteMeta', 'restoreVersion', 'addItem', 'toggleItem', 'setItemText', 'setItemDepth',
@@ -53,7 +53,7 @@ export function createClient(worker: Worker, channel = new BroadcastChannel('var
   for (const method of [
     'deviceId', 'listNotes', 'getNote', 'createNote', 'saveBody', 'setNoteMeta', 'versions', 'heads',
     'restoreVersion', 'items', 'addItem', 'toggleItem', 'setItemText', 'setItemDepth', 'removeItem', 'itemHistory',
-    'tags', 'tagsOf', 'unpushed', 'markPushed', 'applyRemote', 'syncCursor', 'setSyncCursor', 'resetSync',
+    'tags', 'tagsOf', 'unpushed', 'markPushed', 'applyRemote', 'syncCursor', 'applyRemotePage', 'resetSync',
     'debugTables', 'debugRows',
   ] as (keyof Handlers)[]) {
     repo[method] = (...args) => call(method, args);

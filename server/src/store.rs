@@ -146,6 +146,16 @@ impl Store {
         rows.collect()
     }
 
+    /// The owner's highest sequence, or 0: the client compares it with its own cursor to notice that
+    /// this log has lost ops (a restored backup, a wiped account).
+    pub fn head(&self, owner: &str) -> rusqlite::Result<i64> {
+        self.conn.lock().unwrap().query_row(
+            "SELECT COALESCE(MAX(server_seq), 0) FROM op WHERE owner = ?1",
+            params![owner],
+            |row| row.get(0),
+        )
+    }
+
     pub fn usage(&self, owner: &str) -> rusqlite::Result<i64> {
         self.conn.lock().unwrap().query_row(
             "SELECT COALESCE(SUM(LENGTH(ciphertext)), 0) FROM op WHERE owner = ?",

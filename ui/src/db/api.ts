@@ -28,8 +28,8 @@ export interface Handlers {
   unpushed(): Op[];
   markPushed(ops: { id: string }[]): void;
   applyRemote(ops: Op[]): number;
-  syncCursor(): number;
-  setSyncCursor(cursor: number): void;
+  syncCursor(account: string): number;
+  applyRemotePage(ops: Op[], cursor: number, account: string): number;
   resetSync(): void;
   debugTables(): DebugTable[];
   debugRows(table: string, offset?: number, limit?: number): DebugPage;

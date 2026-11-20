@@ -459,8 +459,8 @@ export function debugRows(db: Db, table: string, offset = 0, limit = 100): Debug
   return { columns, rows, total };
 }
 
-export function syncCursor(db: Db): number {
-  return Number(meta(db, 'cursor') ?? '0');
+export function syncCursor(db: Db, account: string): number {
+  return meta(db, 'cursor_account') === account ? Number(meta(db, 'cursor') ?? '0') : 0;
 }
 
 /**
@@ -472,11 +472,22 @@ export function resetSync(db: Db): void {
     db.run('UPDATE op SET pushed = 0');
     db.run('DELETE FROM op_seen');
     setMetaValue(db, 'cursor', '0');
+    setMetaValue(db, 'cursor_account', '');
   });
 }
 
-export function setSyncCursor(db: Db, cursor: number): void {
-  setMetaValue(db, 'cursor', String(cursor));
+/**
+ * Applies a pulled page and advances the pull cursor in one transaction, so the two can never
+ * disagree: a crash cannot leave the cursor ahead of the ops it stands for.
+ */
+export function applyRemotePage(db: Db, ops: Op[], cursor: number, account: string): number {
+  return tx(db, () => {
+    let applied = 0;
+    for (const op of ops) if (applyRemoteOp(db, op)) applied += 1;
+    setMetaValue(db, 'cursor', String(Math.max(cursor, syncCursor(db, account))));
+    setMetaValue(db, 'cursor_account', account);
+    return applied;
+  });
 }
 
 export function markPushed(db: Db, ops: { id: string }[]): void {

@@ -36,6 +36,7 @@ Log (source of truth, doubles as the push outbox):
 ```
 op(id, device, kind, note_id, payload, created, pushed)    -- PK(id)
 op_seen(id)                      -- idempotency on pull
+meta(cursor, cursor_account)      -- pull position, valid only for the account it was pulled under
 sync_state(device, server_cursor, last_sync_at)
 ```
 

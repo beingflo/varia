@@ -22,6 +22,12 @@ export async function opKey(root: Uint8Array): Promise<CryptoKey> {
   );
 }
 
+/** A stable, non-secret fingerprint of a token: names the account a pull cursor belongs to. */
+export async function accountTag(token: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+  return Array.from(new Uint8Array(digest).slice(0, 8), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 /** Returns base64 of `nonce ‖ ciphertext`, which is what the server stores as an opaque string. */
 export async function seal(key: CryptoKey, value: unknown): Promise<string> {
   const plain = await gzip(new TextEncoder().encode(JSON.stringify(value)));

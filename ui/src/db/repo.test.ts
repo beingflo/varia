@@ -311,6 +311,27 @@ describe('debug reads', () => {
     expect(repo.applyRemoteOps(target, [opA, opB])).toBe(0);
   });
 
+  it('records the pull cursor with the account it belongs to, in one call with the ops', () => {
+    const db = fresh();
+    const op: Op = {
+      id: 'op-r1',
+      device: 'dev-b',
+      kind: 'note_meta',
+      note_id: 'n1',
+      lamport: 1,
+      created: 1_700_000_000_000,
+      payload: { note_id: 'n1', kind: 'note', title: 'T', deleted: false, tags: [] },
+    } as Op;
+
+    expect(repo.applyRemotePage(db, [op], 7, 'acct-a')).toBe(1);
+    expect(repo.syncCursor(db, 'acct-a')).toBe(7);
+    // A different account's cursor is not this account's: the value is useless, so it reads as 0.
+    expect(repo.syncCursor(db, 'acct-b')).toBe(0);
+    // The cursor never moves backwards within an account.
+    expect(repo.applyRemotePage(db, [], 3, 'acct-a')).toBe(0);
+    expect(repo.syncCursor(db, 'acct-a')).toBe(7);
+  });
+
   it('shows the op log newest first', () => {
     const db = fresh();
     const id = repo.createNote(db, 'note');

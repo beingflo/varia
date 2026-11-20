@@ -123,6 +123,8 @@ struct WireOp {
 struct SyncResponse {
     ops: Vec<PulledOp>,
     cursor: i64,
+    /// Highest sequence in the account. Below a client's cursor, that client must rewind.
+    head: i64,
     more: bool,
     usage_bytes: i64,
     cap_bytes: i64,
@@ -205,6 +207,7 @@ async fn sync(
             })
             .collect(),
         cursor,
+        head: state.store.head(&owner)?,
         more,
         usage_bytes: usage,
         cap_bytes: state.cfg.cap_bytes,

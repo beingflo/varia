@@ -1,6 +1,7 @@
 // One sync call: push the outbox, pull what is missing, apply it. Transport and key come from
 // outside, so this is testable without a network or a browser.
 import type { Repo } from '../db/api';
+import { accountTag } from './crypto';
 import type { Op } from '../db/types';
 import { openSealed, seal } from './crypto';
 
@@ -18,6 +19,8 @@ export type WireOp = {
 export type SyncResponse = {
   ops: (WireOp & { server_seq: number })[];
   cursor: number;
+  /** The account's highest `server_seq`; below our cursor means the server lost ops. */
+  head: number;
   more: boolean;
   usage_bytes: number;
   cap_bytes: number;
@@ -34,6 +37,8 @@ export type SyncState = {
   cap: number;
   /** The account has more ops than one call may pull: ask again right away. */
   more: boolean;
+  /** The server's log had lost ops this device had: everything was re-pushed from scratch. */
+  rewound: boolean;
 };
 
 /** Round-trip limit per call: `more` comes back when the account has more ops than one page. */
@@ -41,7 +46,17 @@ const MAX_ROUNDS = 5;
 
 export async function syncNow(options: { repo: Repo; key: CryptoKey; token: string; transport: Transport }): Promise<SyncState> {
   const { repo, key, token, transport } = options;
-  const state: SyncState = { pushed: 0, pulled: 0, skipped: 0, cursor: await repo.syncCursor(), usage: 0, cap: 0, more: false };
+  const account = await accountTag(token);
+  const state: SyncState = {
+    pushed: 0,
+    pulled: 0,
+    skipped: 0,
+    cursor: await repo.syncCursor(account),
+    usage: 0,
+    cap: 0,
+    more: false,
+    rewound: false,
+  };
 
   for (let round = 0; round < MAX_ROUNDS; round += 1) {
     const outbox = await repo.unpushed();
@@ -57,6 +72,15 @@ export async function syncNow(options: { repo: Repo; key: CryptoKey; token: stri
     );
 
     const response = await transport(token, { device: await repo.deviceId(), cursor: state.cursor, ops });
+
+    // The server is behind us: a restored backup or a wiped account. Trust it, not the cursor, or
+    // this device would sit on a log nobody else can see.
+    if (response.head < state.cursor) {
+      await repo.resetSync();
+      state.cursor = 0;
+      state.rewound = true;
+      continue;
+    }
 
     // Only after the server accepted them: a failed push must leave the outbox intact. Duplicates
     // are ignored server-side, so a second attempt is harmless.
@@ -74,10 +98,9 @@ export async function syncNow(options: { repo: Repo; key: CryptoKey; token: stri
       // A wrong key or a damaged op would block the cursor forever; skip it and move on.
       else state.skipped += 1;
     }
-    if (page.length > 0) state.pulled += await repo.applyRemote(page);
-
+    // One worker call: the page and the cursor it stands for land in the same transaction.
+    state.pulled += await repo.applyRemotePage(page, response.cursor, account);
     state.cursor = Math.max(state.cursor, response.cursor);
-    await repo.setSyncCursor(state.cursor);
     state.usage = response.usage_bytes;
     state.cap = response.cap_bytes;
     state.more = response.more;

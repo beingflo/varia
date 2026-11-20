@@ -114,6 +114,44 @@ The old account's log stays on the server, unreadable without a key that device 
 - **The local lamport clock is raised to the remote one** when an op is applied, otherwise the next
   local write would lose the tie-break against the device it just pulled from.
 
+## The cursor can be wrong, so it is never trusted alone
+
+A pull cursor is a number that can disagree with the content it stands for, and every sync bug so far
+was such a disagreement. Three rules remove the class instead of patching instances:
+
+- **Applied and advanced together.** A page and the cursor it stands for are written in one worker
+  call and one transaction (`applyRemotePage`). A crash or a closed tab cannot leave the cursor ahead
+  of the ops, which would have skipped them permanently and silently.
+- **Bound to its account.** The cursor is stored with a fingerprint of the token (`accountTag`, a
+  non-secret SHA-256 prefix). A cursor from another account reads as `0`, so losing the keystore or
+  pointing the database at a different bucket self-heals instead of skipping the account's history.
+- **Compared with the server's head.** Every response carries `head`, the highest `server_seq` in the
+  account. If it is *below* our cursor, the server has lost ops (a restored backup, a wiped table).
+  The client rewinds the outbox, re-pushes its whole log, and pulls from zero.
+
+A content hash would only add detection of *reordering* by an operator who can already serve garbage;
+ordering does not affect the result, because conflicts are decided by lamport stamps inside the ops.
+So the cheap structural rules win: nothing to hash, no full re-pull on the normal path.
+
+## Two histories, one account
+
+Linking a device that already has notes is a merge, not an upload: enrolment rewinds the outbox
+(`pushed = 0`, cursor `0`) and clears the pull dedupe, so the whole local log goes up and the whole
+account log comes down. Both devices end with the union, ordered by `(lamport, device)`.
+
+- **Distinct notes never conflict.** Note ids are random and minted per device, so two independent
+  histories touch disjoint notes. Nothing is overwritten; the account holds both.
+- **The same note only exists on both sides if the database was cloned.** Then edits meet field by
+  field under last-writer-wins, decided by lamport, not by wall clock: a device with a longer history
+  wins a tie even when its write is older. Both devices still converge, and the losing snapshot
+  survives in the version tree as a branch to restore from.
+- **Lamport clocks jump to the maximum on apply**, so everything written after a merge wins against
+  everything written before it, on either side.
+- **Only ops new to the account are stored**: the server dedupes on the op id, so a history that is
+  already up there is re-pushed harmlessly (and its `pushed` flags go back to 1).
+- **A rich history costs requests.** Pages are 500 ops and the token bucket allows 10 burst / 30 per
+  minute, so a few thousand ops land immediately and the rest arrive with backoff.
+
 ## Conflict
 
 When a pull lands a note whose server head is not an ancestor of the local head, both branches stay

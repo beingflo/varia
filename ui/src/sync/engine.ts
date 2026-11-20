@@ -69,7 +69,7 @@ export function createEngine(options: {
       await flushAll(); // unsaved edits become ops before they are pushed
       const result = await syncNow({ repo, key: account.key, token: account.token, transport });
       // A backlog larger than five pages drains by chaining runs; the rate limiter paces it.
-      if (result.more) queued = true;
+      if (result.more || result.rewound) queued = true;
       patch({
         state: 'idle',
         last: Date.now(),
@@ -120,6 +120,9 @@ export function createEngine(options: {
 
   /** Joins an existing account from its code. The first pull starts at cursor 0: the whole log. */
   async function enrol(token: string, key: string): Promise<void> {
+    // Not enrolled but holding ops marked pushed, or a cursor from some other bucket: a lost
+    // keystore. Rewind so this device's history joins the account instead of being silently skipped.
+    await repo.resetSync();
     await remember(token.trim(), parseRootKey(key));
     await run('after enrolment');
   }

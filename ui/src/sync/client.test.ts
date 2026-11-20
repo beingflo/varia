@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { Repo } from '../db/api';
 import type { Op } from '../db/types';
 import { testRepo } from '../db/inProcess';
-import { newRootKey, opKey, seal } from './crypto';
+import { accountTag, newRootKey, opKey, seal } from './crypto';
 import { syncNow, type SyncResponse, type Transport, type WireOp } from './client';
 
 function fakeServer() {
@@ -24,6 +24,7 @@ function fakeServer() {
     const page = stored.filter((op) => op.server_seq > floor).slice(0, 2);
     const response: SyncResponse = {
       ops: page,
+      head: stored.length,
       cursor: page.length > 0 ? page[page.length - 1].server_seq : floor,
       more: stored.filter((op) => op.server_seq > (page.at(-1)?.server_seq ?? floor)).length > 0,
       usage_bytes: stored.length,
@@ -42,10 +43,10 @@ async function pair() {
 /** Records each `applyRemote` call, to pin the batching: one call per pulled page, never per op. */
 function spied(repo: Repo) {
   const batches: Op[][] = [];
-  const applyRemote = repo.applyRemote.bind(repo);
-  repo.applyRemote = async (ops) => {
+  const applyRemotePage = repo.applyRemotePage.bind(repo);
+  repo.applyRemotePage = async (ops, cursor, account) => {
     batches.push(ops);
-    return applyRemote(ops);
+    return applyRemotePage(ops, cursor, account);
   };
   return { repo, batches };
 }
@@ -101,12 +102,32 @@ describe('sync', () => {
     const received = await syncNow({ repo: receiver, key, token: 't', transport: server.transport });
     expect(received.pulled).toBe(4);
     expect(received.cursor).toBe(4);
-    expect(await receiver.syncCursor()).toBe(4);
+    expect(await receiver.syncCursor(await accountTag('t'))).toBe(4);
     expect((await receiver.getNote(id))?.body).toBe('three');
 
     // Nothing left: a further sync is a no-op, not a loop.
     const again = await syncNow({ repo: receiver, key, token: 't', transport: server.transport });
     expect(again).toMatchObject({ pushed: 0, pulled: 0, cursor: 4 });
+  });
+
+  // A wiped or restored account: the server's log ends below our cursor. Trusting the cursor would
+  // leave this device holding notes no other device can ever see.
+  it('rewinds and re-pushes when the server has lost ops', async () => {
+    const { key, sender } = await pair();
+    const first = fakeServer();
+    const id = writeNote(sender, '# before the backup restore');
+    await syncNow({ repo: sender, key, token: 't', transport: first.transport });
+    expect(await sender.syncCursor(await accountTag('t'))).toBeGreaterThan(0);
+
+    const restored = fakeServer(); // empty log, same account
+    const state = await syncNow({ repo: sender, key, token: 't', transport: restored.transport });
+
+    expect(state.rewound).toBe(true);
+    expect((await sender.unpushed()).length + state.pushed).toBeGreaterThan(0);
+    // Everything came back: the second server now serves the note, materialised elsewhere.
+    const { repo: receiver } = spied(testRepo('device-c'));
+    await syncNow({ repo: receiver, key, token: 't', transport: restored.transport });
+    expect((await receiver.getNote(await id))?.body).toBe('# before the backup restore');
   });
 
   // The trap: applying op by op meant one worker round trip, one commit and one view refresh each,
@@ -122,7 +143,7 @@ describe('sync', () => {
     await syncNow({ repo: receiver, key, token: 't', transport: server.transport });
 
     // The fake service serves two ops per page: one note_meta plus three snapshots is four ops,
-    // two pages, so two calls.
+    // two pages, so two calls — and each carries its own cursor advancement.
     expect(batches.map((batch) => batch.length)).toEqual([2, 2]);
     expect((await receiver.getNote(id))?.body).toBe('three');
   });

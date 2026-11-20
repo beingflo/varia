@@ -24,7 +24,8 @@ op(owner, server_seq INTEGER PK, op_id, device, kind, note_id, created, cipherte
 ```
 
 `server_seq` is a per-owner monotonic counter assigned on insert; pulling is `WHERE owner = ? AND
-server_seq > ? ORDER BY server_seq LIMIT 500`. The unique key makes retries idempotent. Migrations
+server_seq > ? ORDER BY server_seq LIMIT 500`. Every response also reports `head`, the owner's
+highest `server_seq`, so a client can notice that the log is shorter than what it already pulled. The unique key makes retries idempotent. Migrations
 only ever create or add indexes here — the note schema lives in the client, which is what keeps the
 server cheap to operate.
 

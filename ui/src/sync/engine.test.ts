@@ -2,7 +2,7 @@
 // The loop, with a faked service and an in-memory key store: no network, no IndexedDB.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { testRepo } from '../db/inProcess';
-import { formatRootKey, newRootKey, opKey } from './crypto';
+import { accountTag, formatRootKey, newRootKey, opKey } from './crypto';
 import { createEngine } from './engine';
 import type { Account, AccountStore } from './keystore';
 import type { Transport, WireOp } from './client';
@@ -38,6 +38,7 @@ function fakeService() {
     return {
       ops: page,
       cursor: page.at(-1)?.server_seq ?? floor,
+      head: stored.length,
       more: false,
       usage_bytes: stored.length * 64,
       cap_bytes: 500 * 1024 * 1024,
@@ -82,6 +83,24 @@ describe('sync engine', () => {
     expect(engine.status()).toMatchObject({ state: 'idle', pending: 0 });
     expect(await repo.unpushed()).toHaveLength(0);
     expect(service.stored).toHaveLength(2);
+  });
+
+  it('pushes its whole history on enrolment, even after a lost keystore', async () => {
+    const service = fakeService();
+    const { token, keyText } = await accountFor();
+    const repo = testRepo('device-a');
+    const id = await repo.createNote('note');
+    await repo.saveBody(id, '# written before the keystore went missing');
+    // A device that lost its account record still carries `pushed` flags and a cursor pointing at a
+    // bucket it can no longer read. Joining elsewhere must upload its notes, not skip them.
+    await repo.markPushed(await repo.unpushed());
+    repo.applyRemotePage([], 99, await accountTag(token));
+
+    const engine = createEngine({ repo, store: memoryStore(), transport: service.transport });
+    await engine.enrol(token, keyText);
+
+    expect(service.stored.length).toBeGreaterThan(0);
+    expect(await repo.unpushed()).toHaveLength(0);
   });
 
   it('enrols from a code and pulls the whole log into an empty database', async () => {
@@ -174,7 +193,7 @@ describe('sync engine', () => {
     // The notes are untouched; everything becomes pushable again and the cursor restarts.
     expect((await repo.getNote(id))?.body).toBe('kept locally');
     expect(await repo.unpushed()).toHaveLength(2);
-    expect(await repo.syncCursor()).toBe(0);
+    expect(await repo.syncCursor(await accountTag('token-from-signup'))).toBe(0);
 
     // A new account receives the entire local history on its first push.
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ token: 'tok-2' }), { status: 200 })));

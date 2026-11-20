@@ -65,7 +65,7 @@ describe('worker client', () => {
     repo.onChange(seen);
 
     await repo.markPushed([{ id: 'op-1' }]);
-    await repo.setSyncCursor(7);
+    await repo.applyRemotePage([], 7, 'tag');
     await settle();
 
     // Otherwise every sync would schedule the next one.
