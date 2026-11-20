@@ -480,6 +480,21 @@ export function resetSync(db: Db): void {
 }
 
 /**
+ * Deletes every note and its whole history, keeping the device id: the same installation, emptied.
+ * The server's log is untouched, so agreeing to sync the account again brings it all back.
+ */
+export function purge(db: Db): void {
+  tx(db, () => {
+    // Children before parents: `version`, `todo_item` and `note_tag` reference `note`.
+    for (const table of ['todo_item_op', 'todo_item', 'version', 'note_tag', 'tag', 'op', 'op_seen', 'sync_state', 'note']) {
+      db.run(`DELETE FROM ${table}`);
+    }
+    setMetaValue(db, 'cursor', '0');
+    setMetaValue(db, 'cursor_account', '');
+  });
+}
+
+/**
  * Applies a pulled page and advances the pull cursor in one transaction, so the two can never
  * disagree: a crash cannot leave the cursor ahead of the ops it stands for.
  */

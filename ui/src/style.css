@@ -6,13 +6,14 @@
   --bg: #fdfdfc;
   --line: #ebebe8;
   --warn: #b06000;
+  --danger: #b3261e;
   --ok: #3f7d4f;
   /* Line length of the writing column; the page itself stays wide. */
   --measure: 74ch;
   font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --fg: #e6e6e3; --ink: #f2f2f0; --muted: #85857f; --bg: #131313; --line: #262624; --warn: #e0a050; --ok: #6cae7e; }
+  :root { --fg: #e6e6e3; --ink: #f2f2f0; --muted: #85857f; --bg: #131313; --line: #262624; --warn: #e0a050; --ok: #6cae7e; --danger: #f2837a; }
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -175,6 +176,8 @@ input[type='search']::-webkit-search-cancel-button { display: none; }
 }
 .overlay[aria-label='sync'] .action:hover:not(:disabled) { border-color: var(--muted); color: var(--fg); }
 .overlay[aria-label='sync'] .action:disabled { opacity: 0.4; }
+/* The one action nobody should reach by accident: it deletes what this device holds. */
+.overlay[aria-label='sync'] .action.danger { border-color: var(--danger); color: var(--danger); }
 /* The one primary action on this screen: join an existing account with a code. */
 .overlay[aria-label='sync'] .action.primary {
   border-color: var(--ink); background: var(--ink); color: var(--bg); font-weight: 500;

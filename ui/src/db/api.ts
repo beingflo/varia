@@ -34,6 +34,8 @@ export interface Handlers {
   resetCursor(account: string): void;
   applyRemotePage(ops: Op[], cursor: number, account: string): number;
   resetSync(): void;
+  /** Delete every note and its history on this device. */
+  purge(): void;
   debugTables(): DebugTable[];
   debugRows(table: string, offset?: number, limit?: number): DebugPage;
 }

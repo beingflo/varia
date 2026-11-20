@@ -1,9 +1,15 @@
 import { fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { testRepo } from '../db/inProcess';
 import { SyncProvider } from '../sync/context';
 import type { Engine, SyncStatus } from '../sync/engine';
+import { renderWithRepo } from '../test-utils';
 import Sync from './Sync';
+
+const restores: (() => void)[] = [];
+const onTestDone = (fn: () => void) => restores.push(fn);
+afterEach(() => restores.splice(0).forEach((fn) => fn()));
 
 const TOKEN = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 const KEY = 'A'.repeat(52);
@@ -48,7 +54,8 @@ function fakeEngine(overrides: Partial<Engine> = {}, initial: Partial<SyncStatus
   return { engine, setStatus, setEnrolled, setToken };
 }
 
-const open = (engine: Engine) => render(() => <SyncProvider engine={engine}><Sync onClose={() => {}} /></SyncProvider>);
+const open = (engine: Engine) =>
+  renderWithRepo(() => <SyncProvider engine={engine}><Sync onClose={() => {}} /></SyncProvider>, testRepo());
 
 const joinButton = () => screen.getByRole('button', { name: 'join this device' });
 const createButton = () => screen.getByRole('button', { name: 'create a new account' });
@@ -102,6 +109,27 @@ describe('sync overlay', () => {
 
     await waitFor(() => expect(engine.unlink).toHaveBeenCalledTimes(1));
     expect(await screen.findByRole('button', { name: 'join this device' })).toBeTruthy();
+  });
+
+  it('purges the local database in two steps, after stopping sync', async () => {
+    const { engine, setEnrolled } = fakeEngine();
+    setEnrolled(true);
+    // jsdom's location is not configurable: replace the whole object for the length of the test.
+    const reload = vi.fn();
+    const actual = window.location;
+    Object.defineProperty(window, 'location', { configurable: true, value: { ...actual, reload } });
+    onTestDone(() => Object.defineProperty(window, 'location', { configurable: true, value: actual }));
+    const repo = testRepo();
+    await repo.createNote('note', 'test data');
+    renderWithRepo(() => <SyncProvider engine={engine}><Sync onClose={() => {}} /></SyncProvider>, repo);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'purge local data' }));
+    expect(engine.unlink).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'click again to delete everything' }));
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
+    expect(engine.unlink).toHaveBeenCalledTimes(1);
+    expect(await repo.listNotes({})).toEqual([]);
   });
 
   it('reports the last sync and syncs again on Enter', async () => {

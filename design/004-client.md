@@ -167,6 +167,12 @@ token and the derived key in IndexedDB, and turns the local op log back into an 
 (`pushed = 0`, cursor `0`, remote-dedup rows dropped). Notes are never touched, so unlinking and
 creating a new account uploads the entire local history to the new one.
 
+`purge local data` is the other direction, in red and behind a second click: pending flushes are
+allowed to land, then flushing is sealed off, the account is forgotten, and every table but `meta`
+is emptied — the device id stays, so this is the same installation, emptied. The page reloads into a
+draft. The server's log is untouched, so signing in again brings every note back: it wipes the
+device, not the account.
+
 ## PWA
 
 `vite-plugin-pwa` precaches the app shell, including the sqlite wasm and worker chunks; there is no

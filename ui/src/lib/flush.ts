@@ -5,13 +5,21 @@
 // typed into something permanent for it: a half-typed item would become an item of its own while
 // the caret keeps going in the field.
 const flushers = new Set<(background: boolean) => unknown>();
+// Set by the purge: a flush on the way out must not write back what is being deleted.
+let sealed = false;
 
 export function registerFlush(fn: (background: boolean) => unknown): () => void {
   flushers.add(fn);
   return () => flushers.delete(fn);
 }
 
+export function stopFlushing(): void {
+  sealed = true;
+  flushers.clear();
+}
+
 export async function flushAll(background = false): Promise<void> {
+  if (sealed) return;
   for (const flush of flushers) {
     try {
       await flush(background);

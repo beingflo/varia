@@ -319,6 +319,25 @@ describe('debug reads', () => {
     expect(repo.syncCursor(db, 'acct-a')).toBe(7);
   });
 
+  it('purges every note and its history, keeping the device and the schema', () => {
+    const db = fresh('dev-keep');
+    const note = repo.createNote(db, 'note', 'test');
+    repo.saveBody(db, note, 'a body');
+    const list = repo.createNote(db, 'todo', 'chores');
+    repo.addItem(db, list, 'milk');
+    expect(repo.debugTables(db).find((t) => t.name === 'op')!.count).toBeGreaterThan(0);
+
+    repo.purge(db);
+
+    const counts = Object.fromEntries(repo.debugTables(db).map((t) => [t.name, t.count]));
+    expect(counts).toMatchObject({ note: 0, version: 0, op: 0, op_seen: 0, todo_item: 0 });
+    // `meta` keeps the device id: the installation survives, its content does not.
+    expect(repo.deviceId(db)).toBe('dev-keep');
+    expect(repo.syncCursor(db, 'acct-a')).toBe(0);
+    expect(repo.listNotes(db, {})).toEqual([]);
+    expect(repo.versions(db, note)).toEqual([]);
+  });
+
   it('shows the op log newest first', () => {
     const db = fresh();
     const id = repo.createNote(db, 'note');

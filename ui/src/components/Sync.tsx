@@ -1,4 +1,6 @@
 import { createMemo, createSignal, onCleanup, onMount, Show } from 'solid-js';
+import { useRepo } from '../db/context';
+import { flushAll, stopFlushing } from '../lib/flush';
 import { ago } from '../lib/time';
 import { useSync } from '../sync/context';
 
@@ -7,12 +9,14 @@ type Fresh = { token: string; key: string };
 /** Sync as one overlay: the state when enrolled, the two secrets separated, the key only once. */
 export default function Sync(props: { onClose: () => void }) {
   const sync = useSync();
+  const repo = useRepo();
   const [token, setToken] = createSignal('');
   const [key, setKey] = createSignal('');
   const [fresh, setFresh] = createSignal<Fresh>();
   const [error, setError] = createSignal('');
   const [busy, setBusy] = createSignal(false);
   const [confirmUnlink, setConfirmUnlink] = createSignal(false);
+  const [confirmPurge, setConfirmPurge] = createSignal(false);
 
   let field: HTMLInputElement | undefined;
 
@@ -199,6 +203,36 @@ export default function Sync(props: { onClose: () => void }) {
       </Show>
       <Show when={error()}>
         <p class="small">{error()}</p>
+      </Show>
+      {/* Outside the two views: a device that never enrolled has test data to get rid of too. */}
+      <Show when={!fresh()}>
+        <p class="separator muted small">
+          delete every note and its history on this device: the log on the server stays, so signing in
+          again brings it all back
+        </p>
+        <button
+          type="button"
+          class="action danger"
+          disabled={busy()}
+          onClick={() => {
+            if (!confirmPurge()) {
+              setConfirmPurge(true); // two steps: this cannot be undone on this device
+              return;
+            }
+            void attempt(async () => {
+              // Let the queues settle first: a save that is already on its way would otherwise land
+              // after the purge and put the note back. Then nothing may write again, including the
+              // flush the reload itself triggers.
+              await flushAll();
+              stopFlushing();
+              await sync.unlink(); // stop syncing, so an in-flight push cannot write into the wipe
+              await repo.purge();
+              location.reload();
+            });
+          }}
+        >
+          {confirmPurge() ? 'click again to delete everything' : 'purge local data'}
+        </button>
       </Show>
     </section>
   );
