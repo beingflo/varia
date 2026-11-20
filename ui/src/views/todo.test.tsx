@@ -138,6 +138,36 @@ describe('Todo view', () => {
     });
   });
 
+  // A flush started mid-word (every sync flushes before it pushes) must not hand back an older
+  // version of the row: the characters typed after the write began would disappear.
+  it('keeps characters typed while a save of that row is in flight', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('todo', 'work');
+    await repo.addItem(id, 'one');
+    // A write that takes a moment, so a keystroke can land while it is in flight.
+    const slow = {
+      ...repo,
+      setItemText: async (itemId: string, text: string) => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        repo.setItemText(itemId, text);
+      },
+    };
+    renderWithRepo(() => <TodoView id={id} />, slow);
+
+    const input = (await screen.findByDisplayValue('one')) as HTMLInputElement;
+    input.focus();
+    fireEvent.input(input, { target: { value: 'one and' } });
+    runCommand('save'); // starts writing "one and"
+    await new Promise((resolve) => setTimeout(resolve, 5)); // the write is in flight
+    fireEvent.input(input, { target: { value: 'one and two' } }); // typed while it is
+
+    await waitFor(async () => expect((await items(repo, id))[0].text).toBe('one and'));
+    expect((await screen.findByDisplayValue('one and two')) as HTMLInputElement).toBeTruthy();
+
+    fireEvent.blur(screen.getByDisplayValue('one and two'));
+    await waitFor(async () => expect((await items(repo, id))[0].text).toBe('one and two'));
+  });
+
   // What is typed lives in state, not in the input: a reload underneath must not drop it.
   it('keeps what was typed into a row while another row changes', async () => {
     const repo = testRepo();

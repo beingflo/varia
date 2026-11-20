@@ -325,8 +325,14 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
     const item = all().find((row) => row.id === id);
     if (!item) return;
     const text = value.trim();
+    // The typed text is only given up if it is still the text this write carried: a save can be
+    // started by a sync flush mid-word, and dropping the edit unconditionally would delete the
+    // characters typed after the write began.
+    const handOver = () => {
+      if (edits().get(id) === text) dropEdit(id);
+    };
     if (text === item.text) {
-      dropEdit(id);
+      handOver();
       return; // nothing to do: not a write, not a notification
     }
     try {
@@ -336,7 +342,7 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
       const data = await read();
       batch(() => {
         if (data) apply(data);
-        dropEdit(id);
+        handOver();
       });
       queueMicrotask(restoreFocus);
     }

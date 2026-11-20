@@ -83,6 +83,10 @@ before a write could finish:
 
 Writes go through one serial queue, so a check-off, an indent and a text edit cannot interleave.
 
+Every sync flushes before it pushes, so a write of the row being typed into can start mid-word. A
+write therefore only hands the input's text back if the input still holds exactly what it wrote;
+anything typed after the write began stays an edit and is written next.
+
 A list with no `id` is a draft, like the note editor: nothing is written until an item or a title
 exists, so ⌘⇧E followed by ⌘E leaves no row behind. The first write creates the note (`ensureNote`,
 guarded by an in-flight promise so two concurrent writes cannot create two notes) and the view tells
