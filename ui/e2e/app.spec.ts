@@ -51,10 +51,11 @@ test('keeps the open note in the url across a reload', async ({ page }) => {
   await add.fill('survives a reload');
   await add.press('Enter');
 
-  expect(new URL(page.url()).pathname).toMatch(/^\/note\/[\w-]+$/);
+  // The id exists once the first write landed, so the url follows a moment later.
+  await expect.poll(() => new URL(page.url()).pathname).toMatch(/^\/note\/[\w-]+$/);
 
-  // The opfs VFS lands writes asynchronously: a reload in the same tick as the write could lose it.
-  await page.waitForTimeout(400);
+  // The opfs VFS lands writes asynchronously: a reload too soon after the last write can lose it.
+  await page.waitForTimeout(1000);
   await page.reload();
   await ready(page);
   await expect(page.getByLabel('list title')).toHaveValue('linked list');
@@ -222,17 +223,22 @@ test('nests items with tab, enters at the same level, and steps out when empty',
   await page.keyboard.press('Tab');
   await expect.poll(() => indentOf(1)).toBe('22.4px'); // one level = 1.4rem
 
-  // Enter on a nested item adds a sibling at the same level, not at the top, and the caret moves
-  // into it.
+  // Enter on the last item hands the caret to the placeholder below it, at the same level: one
+  // empty row on screen, not a blank item plus the placeholder.
   await page.keyboard.press('Enter');
+  await expect(page.locator('.items li')).toHaveCount(2);
+  await expect(add).toBeFocused();
+  await expect(page.locator('.item-add')).toHaveCSS('padding-left', '22.4px');
+
+  await add.fill('sibling');
+  await add.press('Enter');
   await expect(page.locator('.items li')).toHaveCount(3);
-  await expect(page.locator('.item-text').nth(2)).toBeFocused();
   await expect.poll(() => indentOf(2)).toBe('22.4px');
 
-  // Enter again on the empty nested item steps one level out.
-  await page.locator('.item-text').nth(2).click(); // focus it explicitly: no hidden focus race
-  await page.keyboard.press('Enter');
-  await expect.poll(() => indentOf(2)).toBe('0px');
+  // Enter on the empty placeholder steps the pending item out one level.
+  await add.press('Enter');
+  await expect(page.locator('.item-add')).toHaveCSS('padding-left', '0px');
+  await expect(page.locator('.items li')).toHaveCount(3);
 });
 
 test('indents the pending item with tab in the add field', async ({ page }) => {
@@ -263,6 +269,38 @@ test('indents the pending item with tab in the add field', async ({ page }) => {
   await add.press('Enter');
   await expect(page.locator('.item-add')).toHaveCSS('padding-left', '0px');
   await expect(page.locator('.items li')).toHaveCount(3);
+});
+
+test('an abandoned new list is not saved, and cmd+s commits the item being typed', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  // ⌘⇧E then ⌘E: the empty list leaves nothing in the note list.
+  await page.keyboard.press(`${MOD}+Shift+E`);
+  await expect(page.getByLabel('new item')).toBeFocused();
+  await page.keyboard.press(`${MOD}+E`);
+  await press(page, 'k');
+  await expect(page.locator('.notes li.muted')).toHaveText('nothing yet'); // no note was written
+  await page.keyboard.press('Escape');
+
+  // ⌘S in the add field saves the half-typed item, exactly as Enter would.
+  await page.keyboard.press(`${MOD}+Shift+E`);
+  const add = page.getByLabel('new item');
+  await add.fill('saved with the keyboard');
+  await press(page, 's');
+  await expect(page.getByLabel('saved with the keyboard', { exact: true })).toBeVisible();
+  await expect(add).toHaveValue('');
+  await expect(add).toBeFocused();
+
+  // Enter on the last item leaves the caret in the placeholder: no blank item row appears next to
+  // it, so there is never a pair of empty rows.
+  const item = page.getByLabel('saved with the keyboard', { exact: true });
+  await item.press('Enter');
+  await expect(page.locator('.items li')).toHaveCount(1);
+  await expect(add).toBeFocused();
+  await add.fill('and this one too');
+  await add.press('Enter');
+  await expect(page.locator('.items li')).toHaveCount(2);
+  await expect(page.getByLabel('and this one too', { exact: true })).toBeVisible();
 });
 
 test('refuses to check off a parent with open nested items', async ({ page }) => {

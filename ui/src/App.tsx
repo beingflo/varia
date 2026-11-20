@@ -12,7 +12,7 @@ import NoteList from './views/NoteList';
 import NoteView from './views/NoteView';
 import TodoView from './views/TodoView';
 
-type Open = { kind: 'note'; id?: string } | { kind: 'todo'; id: string };
+type Open = { kind: 'note'; id?: string } | { kind: 'todo'; id?: string };
 
 /** One page, no routes: the landing state is an empty note that is only saved once written. */
 export default function App() {
@@ -65,7 +65,7 @@ export default function App() {
       onCommand('new-list', async () => {
         await flushAll();
         setListOpen(false);
-        setOpen({ kind: 'todo', id: await repo.createNote('todo') });
+        setOpen({ kind: 'todo' }); // a draft: no row until an item or a title is written
       }),
       onCommand('sync', async () => {
         setListOpen(false);
@@ -86,7 +86,10 @@ export default function App() {
 
   return (
     <SyncProvider engine={engine}>
-      <Show when={open().kind === 'note'} fallback={<TodoView id={(open() as { id: string }).id} />}>
+      <Show
+        when={open().kind === 'note'}
+        fallback={<TodoView id={open().id} onCreated={(id) => setOpen({ kind: 'todo', id })} />}
+      >
         <NoteView id={open().id} onCreated={(id) => setOpen({ kind: 'note', id })} />
       </Show>
       <Show when={listOpen()}>

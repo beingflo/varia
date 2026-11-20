@@ -1,4 +1,4 @@
-import { batch, createEffect, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
+import { batch, createEffect, createSignal, For, on, onCleanup, onMount, Show } from 'solid-js';
 import type { Item } from '../db/api';
 import { useRepo } from '../db/context';
 import { between } from '../db/ops';
@@ -26,8 +26,13 @@ function merge(current: Item[], next: Item[]): Item[] {
   });
 }
 
-export default function TodoView(props: { id: string }) {
+/**
+ * A list. With no `id` this is an empty draft: nothing exists in the database until an item or a
+ * title is written, so ⌘⇧E followed by ⌘E leaves nothing behind.
+ */
+export default function TodoView(props: { id?: string; onCreated?: (id: string) => void }) {
   const repo = useRepo();
+  const [noteId, setNoteId] = createSignal(props.id);
   const [showDone, setShowDone] = createSignal(false);
   const [draft, setDraft] = createSignal('');
   // Tab in the add field indents the item that Enter will create.
@@ -54,9 +59,33 @@ export default function TodoView(props: { id: string }) {
   // (that would drop a just-inserted row and, with it, an item being typed into).
   let reloadGeneration = 0;
 
+  // The note this view created itself: its state on screen is newer than what a read would return.
+  let ownNote: string | undefined;
+  // A create in flight. Two writes can arrive before the first one lands (flush then add); without
+  // this guard each would create its own note.
+  let creating: Promise<string> | undefined;
+
+  /** The list's note, created on the first write so an untouched draft never lands in the database. */
+  const ensureNote = (): Promise<string> => {
+    const existing = noteId();
+    if (existing) return Promise.resolve(existing);
+    creating ??= (async () => {
+      const id = await repo.createNote('todo');
+      setNoteId(id);
+      ownNote = id;
+      props.onCreated?.(id);
+      return id;
+    })();
+    return creating;
+  };
+
   const reload = async () => {
+    const id = noteId();
+    // A reload is only ever a refresh of the current list: resetting belongs to the effect, which
+    // knows a different list was opened. Clearing here would also wipe a row just added to a draft.
+    if (!id) return;
     const mine = ++reloadGeneration;
-    const [items, note] = await Promise.all([repo.items(props.id, true), repo.getNote(props.id)]);
+    const [items, note] = await Promise.all([repo.items(id, true), repo.getNote(id)]);
     if (mine !== reloadGeneration) return;
     batch(() => {
       setAll((current) => merge(current, items));
@@ -107,18 +136,35 @@ export default function TodoView(props: { id: string }) {
     }
   };
 
-  createEffect(async () => {
-    setDraftDepth(0); // a different list starts its placeholder at the top again
-    const note = await repo.getNote(props.id);
+  // `on` keeps the effect on the list both its dependencies: a read inside `reload` (the note it
+  // just created) must not restart it, or the row being typed would be wiped.
+  createEffect(on(
+    () => props.id,
+    async (id) => {
+      // The id this view just created: reloading now would read the note before the write it is
+      // waiting on, and wipe the title or the row being typed. Kept, so a repeat run is a no-op too.
+      if (id && id === ownNote) return requestAnimationFrame(signalViewReady);
+      setDraftDepth(0); // a different list starts its placeholder at the top again
+    setNoteId(id);
+    setDraft('');
+    setAll([]);
+    const note = id ? await repo.getNote(id) : undefined;
     setTitle(note?.title ?? '');
     setSavedTitle(note?.title ?? '');
     await reload();
-    signalViewReady();
-  });
+    requestAnimationFrame(() => {
+      if (idle()) addInput?.focus({ preventScroll: true });
+      signalViewReady();
+    });
+    },
+  ));
 
-  /** ⌘S saves whatever is being edited: the focused item's text, then the title. */
+  /** ⌘S saves whatever is being edited: a half-typed new item, the focused item, then the title. */
   const flush = (): Promise<void> => {
     const run = async () => {
+      // The add field is not an item yet, and ⌘S does not blur it: commit it here, like Enter does.
+      if (draft().trim()) await add();
+
       const id = focusedId;
       const input = id ? inputs.get(id) : undefined;
       const item = id ? all().find((row) => row.id === id) : undefined;
@@ -126,7 +172,7 @@ export default function TodoView(props: { id: string }) {
 
       const name = title().trim(); // empty titles are fine: the list stays untitled
       if (name === savedTitle()) return;
-      await repo.setNoteMeta(props.id, { title: name });
+      await repo.setNoteMeta(await ensureNote(), { title: name });
       setSavedTitle(name);
     };
     queue = queue.then(run).catch((err) => console.error('save failed', err));
@@ -239,7 +285,13 @@ export default function TodoView(props: { id: string }) {
   };
 
   const insertAfter = async (item: Item | undefined, depth: number, text = '', focusNew = true) => {
-    const list = all();
+    // Rows created with Enter and left empty are placeholders, not items: adding another item means
+    // the user moved on, so every one of them goes. An empty row that parents nested rows stays.
+    const all0 = all();
+    const abandoned = all0.filter(
+      (row, index) => !row.text && !touched.has(row.id) && !(all0[index + 1]?.depth > row.depth),
+    );
+    const list = abandoned.length > 0 ? all0.filter((row) => !abandoned.includes(row)) : all0;
     const id = crypto.randomUUID();
     let ordering: number;
     if (!item) {
@@ -256,9 +308,10 @@ export default function TodoView(props: { id: string }) {
       }
       ordering = between(item.ordering, next?.ordering ?? null);
     }
+    // On screen before the database is touched: no frame where the new row is missing.
     const row: Item = {
       id,
-      note_id: props.id,
+      note_id: noteId() ?? '',
       text,
       done: 0,
       ordering,
@@ -270,7 +323,8 @@ export default function TodoView(props: { id: string }) {
     batch(() => setAll([...list, row].sort((a, b) => a.ordering - b.ordering)));
     if (focusNew) focusItem(id, true);
     try {
-      await repo.addItem(props.id, text, id, depth, ordering);
+      await repo.addItem(await ensureNote(), text, id, depth, ordering);
+      for (const row of abandoned) await repo.removeItem(row.id);
     } finally {
       await reconcile();
       // Keep typing in the add field when the item was added from there.
@@ -355,11 +409,28 @@ export default function TodoView(props: { id: string }) {
         }
         touched.delete(item.id);
         await commitText(item, value);
+        // After the last row the placeholder already is the next row: typing there adds the item,
+        // so a blank item is never created just to carry the caret (two empty rows, one dotted).
+        if (item.id === visible().at(-1)?.id) {
+          setDraftDepth(item.depth);
+          addInput?.focus({ preventScroll: true });
+          return;
+        }
         await insertAfter(item, item.depth);
       })();
     } else if (event.key === 'Tab') {
       event.preventDefault();
-      void setDepth(item, item.depth + (event.shiftKey ? -1 : 1));
+      // What is typed lives in the input, not in the row: indent would rebuild the row from the
+      // stored text and the typing would be gone. Commit first, as a blur would.
+      void (async () => {
+        const text = value.trim();
+        if (text !== item.text) {
+          touched.delete(item.id);
+          await commitText(item, text);
+          if (!text) return; // emptied: commit removed it, like a blur would
+        }
+        await setDepth(item, item.depth + (event.shiftKey ? -1 : 1));
+      })();
     } else if (event.key === 'Backspace' && !value) {
       event.preventDefault();
       void removeAndGoBack(item);

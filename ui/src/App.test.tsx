@@ -75,14 +75,30 @@ describe('App', () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('note body')));
   });
 
-  it('creates a todo list with the new-list command and shows it', async () => {
+  it('opens a new list as a draft that is only saved once it has content', async () => {
     const repo = testRepo();
     renderWithRepo(() => <App />, repo);
 
     mod('new-list');
     await waitFor(() => expect(screen.getByLabelText('list title')).toHaveProperty('value', ''));
-    expect(await repo.listNotes()).toHaveLength(1);
+    // Empty notes are not saved, and an untouched list is no different.
+    expect(await repo.listNotes()).toHaveLength(0);
     expect(document.activeElement).toBe(screen.getByLabelText('new item'));
+
+    fireEvent.input(screen.getByLabelText('new item'), { target: { value: 'milk' } });
+    fireEvent.keyDown(screen.getByLabelText('new item'), { key: 'Enter' });
+    await waitFor(async () => expect(await repo.listNotes()).toHaveLength(1));
+  });
+
+  it('leaves no note behind when a new list is abandoned for a new note', async () => {
+    const repo = testRepo();
+    renderWithRepo(() => <App />, repo);
+
+    mod('new-list');
+    await waitFor(() => expect(screen.getByLabelText('list title')).toBeTruthy());
+    mod('new-note');
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('note body')));
+    expect(await repo.listNotes()).toHaveLength(0);
   });
 
   it('keeps the text on screen after saving a draft', async () => {

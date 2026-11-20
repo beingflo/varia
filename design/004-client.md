@@ -66,6 +66,27 @@ does; a static host needs the SPA fallback configured.
 - **History**: the version list for a note with a "restore this version" action, and per-item history
   for a todo item. Both read straight off the local log, so they work offline.
 
+### Todo lists
+
+A list with no `id` is a draft, like the note editor: nothing is written until an item or a title
+exists, so ⌘⇧E followed by ⌘E leaves no row behind. The first write creates the note (`ensureNote`,
+guarded by an in-flight promise so two concurrent writes cannot create two notes) and the view tells
+`App` its id afterwards.
+
+⌘S commits whatever is being edited: a half-typed item in the add field (as Enter would), then the
+focused item's text, then the title. Tab and Enter commit the same way before they change anything:
+what is typed lives in the input, so a row rebuilt from the stored text would drop it.
+
+Enter on the **last** item moves the caret into the placeholder below the list, at that item's depth,
+instead of creating a blank item: there is only ever one empty row on screen. Enter in the middle of a
+list does create a row, because there is no placeholder there to carry the caret; if it is left blank,
+the next insert drops it.
+
+An item created by Enter and left empty is a placeholder, not an item. Adding another item anywhere
+drops every empty, untouched row, so blank rows cannot pile up at the end; an empty row that parents
+nested rows is kept. Empty rows are otherwise left alone while the list is open, because an empty
+nested item is the step-out target.
+
 ## Sync UX
 
 The account view holds one thing: the enrolment string, to copy out or paste in. Sync status is a

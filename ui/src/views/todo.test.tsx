@@ -107,23 +107,62 @@ describe('Todo view', () => {
     await waitFor(async () => expect((await items(repo, id))[1].depth).toBe(0));
   });
 
-  it('inserts a sibling after enter on a nested item', async () => {
+  // Enter on the last row hands the caret to the placeholder, which already sits below the list:
+  // creating a blank item there would show two empty rows, one with a real bullet.
+  it('moves the caret into the placeholder after enter on the last item, at its depth', async () => {
     const repo = testRepo();
     const id = await repo.createNote('todo', 'work');
-    const parent = await repo.addItem(id, 'parent');
+    await repo.addItem(id, 'parent');
     await repo.addItem(id, 'nested', undefined, 1);
     renderWithRepo(() => <TodoView id={id} />, repo);
 
     const nested = await screen.findByDisplayValue('nested');
+    nested.focus();
     fireEvent.keyDown(nested, { key: 'Enter' });
 
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('new item')));
+    expect((document.querySelector('.item-add') as HTMLElement).style.paddingLeft).toBe('1.4rem');
+    expect(await items(repo, id)).toHaveLength(2); // nothing blank was written
+
+    // Typing there appends at the level the item had.
+    const add = screen.getByLabelText('new item') as HTMLInputElement;
+    fireEvent.input(add, { target: { value: 'sibling' } });
+    fireEvent.keyDown(add, { key: 'Enter' });
     await waitFor(async () => {
       const list = await items(repo, id);
-      expect(list).toHaveLength(3);
-      expect(list[2].depth).toBe(1);
-      expect(list[2].text).toBe('');
-      expect(list[0].id).toBe(parent);
+      expect(list.map((item) => [item.text, item.depth])).toEqual([
+        ['parent', 0],
+        ['nested', 1],
+        ['sibling', 1],
+      ]);
     });
+  });
+
+  it('keeps what was typed into a new row when tab indents it', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('todo', 'work');
+    await repo.addItem(id, 'one');
+    await repo.addItem(id, 'two');
+    renderWithRepo(() => <TodoView id={id} />, repo);
+
+    // A row in the middle, so Enter inserts an item instead of moving to the placeholder.
+    const first = await screen.findByDisplayValue('one');
+    first.focus();
+    fireEvent.keyDown(first, { key: 'Enter' });
+
+    const typed = (await screen.findByLabelText('empty item')) as HTMLInputElement;
+    fireEvent.input(typed, { target: { value: 'typed then indented' } });
+    fireEvent.keyDown(typed, { key: 'Tab' });
+
+    // The text is written before the row is rebuilt for the new depth.
+    await waitFor(async () =>
+      expect((await items(repo, id)).map((item) => [item.text, item.depth])).toEqual([
+        ['one', 0],
+        ['typed then indented', 1],
+        ['two', 0],
+      ]),
+    );
+    expect((screen.getByDisplayValue('typed then indented') as HTMLInputElement).value).toBe('typed then indented');
   });
 
   it('removes an empty item on backspace and puts the caret on the item above', async () => {
@@ -156,6 +195,74 @@ describe('Todo view', () => {
     await waitFor(async () => expect((await items(repo, id))[0].text).toBe('draft saved'));
     // Still editing: focus is restored to the (re-rendered) row, caret at the end.
     expect(document.activeElement).toBe(screen.getByDisplayValue('draft saved'));
+  });
+
+  it('saves the half-typed new item with the save command, like enter would', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('todo', 'work');
+    renderWithRepo(() => <TodoView id={id} />, repo);
+
+    const add = await screen.findByLabelText('new item');
+    add.focus();
+    fireEvent.input(add, { target: { value: 'bought' } });
+    runCommand('save'); // no blur: the field keeps focus, so ⌘S has to commit it itself
+
+    await waitFor(async () => expect((await items(repo, id)).map((item) => item.text)).toEqual(['bought']));
+    expect((add as HTMLInputElement).value).toBe('');
+  });
+
+  it('creates exactly one note when a title save and an item race for it', async () => {
+    const repo = testRepo();
+    renderWithRepo(() => <TodoView />, repo);
+
+    const title = screen.getByLabelText('list title');
+    fireEvent.input(title, { target: { value: 'work' } });
+    runCommand('save'); // starts creating the note
+    const add = screen.getByLabelText('new item') as HTMLInputElement;
+    fireEvent.input(add, { target: { value: 'first item' } });
+    fireEvent.keyDown(add, { key: 'Enter' }); // and a second write before that create landed
+
+    await waitFor(async () => expect(await repo.listNotes()).toHaveLength(1));
+    const [note] = await repo.listNotes();
+    expect(note.title).toBe('work');
+    expect((await items(repo, note.id)).map((item) => item.text)).toEqual(['first item']);
+  });
+
+  it('shows one empty row at most: enter on the last item leaves the placeholder to be typed in', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('todo', 'work');
+    await repo.addItem(id, 'one');
+    renderWithRepo(() => <TodoView id={id} />, repo);
+
+    const first = await screen.findByDisplayValue('one');
+    first.focus();
+    fireEvent.keyDown(first, { key: 'Enter' });
+
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText('new item')));
+    expect(document.querySelectorAll('.item-text')).toHaveLength(1); // no blank item row
+    expect(await items(repo, id)).toHaveLength(1);
+  });
+
+  it('drops an abandoned empty row when another item is added', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('todo', 'work');
+    await repo.addItem(id, 'one');
+    await repo.addItem(id, 'two');
+    renderWithRepo(() => <TodoView id={id} />, repo);
+
+    // Enter in the middle does create a row: there is no placeholder to carry the caret there.
+    const first = await screen.findByDisplayValue('one');
+    first.focus();
+    fireEvent.keyDown(first, { key: 'Enter' });
+    await waitFor(async () => expect(await items(repo, id)).toHaveLength(3));
+
+    // Left blank: adding from the field drops it rather than parking a blank row between items.
+    const add = screen.getByLabelText('new item');
+    add.focus();
+    fireEvent.input(add, { target: { value: 'three' } });
+    fireEvent.keyDown(add, { key: 'Enter' });
+
+    await waitFor(async () => expect((await items(repo, id)).map((item) => item.text)).toEqual(['one', 'two', 'three']));
   });
 
   it('goes one level up when enter is pressed on an empty nested item', async () => {
