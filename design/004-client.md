@@ -78,8 +78,10 @@ does; a static host needs the SPA fallback configured.
 ### Touch screens
 
 A coarse pointer or a window under 700px has no keyboard, so the same commands are buttons in a bar
-at the bottom: notes, new note, new list, versions — a list gets the show-done toggle instead — and
-sync. Overlays get a visible close, a todo row's bullet is its checkbox, and the history tree stacks
+across the top (never the bottom: that is the iPhone's curve and pull-up gesture): notes, new note,
+new list, versions — a list gets the show-done toggle instead — and sync.
+`viewport-fit=cover` and `env(safe-area-inset-*)` keep the bar and the close buttons clear of the
+status bar, the sync dot clear of the home indicator. Overlays get a visible close, a todo row's bullet is its checkbox, and the history tree stacks
 above the preview instead of sitting beside it. The bar only dispatches the ordinary commands, so no
 behaviour differs between the two.
 
