@@ -44,7 +44,9 @@ Each phase is shippable on its own. Later phases must not force a change to the 
 ## Phase 4: Advanced, unordered
 
 - [ ] observability in acta
-- [ ] dashboards
+- [x] dashboards: a note whose body holds the layout — one JSON line per tile, the last line the tag
+      `#dashboard` — opened as a page of editable tiles (the note and list views, `embedded`), sized
+      in thirds of the board, ruled in the gaps, saved on every action (`design/002`, `design/004`)
 - [x] version tree view: lanes, fork markers, read-only body pane, diff against the parent
 - [ ] vim mode for the note editor (the editor is behind one component)
 - [ ] quick capture: `…/?q=work buy milk` opens the `work` todo list with a new item appended

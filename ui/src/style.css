@@ -193,11 +193,8 @@ input[type='search']::-webkit-search-cancel-button { display: none; }
 }
 .board-head { display: flex; align-items: baseline; gap: 1rem; }
 .board-head .title { margin: 0; flex: 1; min-width: 0; }
-.board-add {
-  flex: none; font-size: 0.8rem; color: var(--muted); border: 1px solid var(--line);
-  border-radius: 3px; padding: 0.3rem 0.6rem;
-}
-.board-add:hover { border-color: var(--muted); color: var(--fg); }
+.board-add { flex: none; font-size: 0.8rem; color: var(--ink); padding: 0.3rem 0.6rem; }
+.board-add:hover { text-decoration: underline; text-underline-offset: 3px; }
 .board-empty { margin: 0; }
 
 /* Tiles are placed by the grid itself, in both directions: a row is a sixth of the room under the
