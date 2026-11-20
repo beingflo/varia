@@ -30,7 +30,7 @@ export default defineConfig({
       workbox: { cleanupOutdatedCaches: true },
       manifest: {
         name: 'varia',
-        start_url: '/',
+        start_url: '/app',
         display: 'standalone',
         background_color: '#111',
         theme_color: '#111',

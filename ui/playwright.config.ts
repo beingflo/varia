@@ -6,7 +6,15 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   reporter: process.env.CI ? 'dot' : 'list',
-  use: { baseURL: 'http://localhost:4174', trace: 'retain-on-failure' },
+  use: {
+    baseURL: 'http://localhost:4174',
+    trace: 'retain-on-failure',
+    // The app suite starts as a returning user; the landing page has its own spec without this.
+    storageState: {
+      cookies: [],
+      origins: [{ origin: 'http://localhost:4174', localStorage: [{ name: 'varia:entered', value: '1' }] }],
+    },
+  },
   // VARIA_E2E_BROWSERS=chromium,firefox,webkit — chromium by default for speed.
   projects: (process.env.VARIA_E2E_BROWSERS ?? 'chromium').split(',').map((name) => {
     const device = { chromium: devices['Desktop Chrome'], firefox: devices['Desktop Firefox'], webkit: devices['Desktop Safari'] }[name.trim()];

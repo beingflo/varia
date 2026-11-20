@@ -53,8 +53,12 @@ the readiness marker the browser tests wait on.
 
 ## Phase 3: Finalize
 
-- [ ] Add favicon
-- [ ] Add landing page
+- [x] favicon and install icons: `ui/public` (svg, ico, apple-touch, 192/512, maskable)
+- [x] landing page at `/landing`: features and the shortcut table (read from `BINDINGS`, so the page
+      cannot drift from the keys that work). `/` is the landing until `varia:entered` is set by
+      "use now" or by the app itself, then the app; a deep link or `/app` (the installed `start_url`)
+      goes straight to the app. The app is a dynamic import, so the landing never loads the worker.
+- [ ] landing copy: rewrite the feature text and settle the section order
 - [ ] iOS install flow and first-run guidance
 - [ ] inline sync status next to the note stamp (the `⌘⇧S` overlay already shows it)
 - [ ] eviction recovery: token present + empty database → full re-pull from cursor 0
