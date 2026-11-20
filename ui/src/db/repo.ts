@@ -466,6 +466,18 @@ export function syncCursor(db: Db): number {
   return Number(meta(db, 'cursor') ?? '0');
 }
 
+/**
+ * Forgets the sync account without touching a single note: the log becomes the outbox again, so the
+ * whole local history can be pushed to a new account.
+ */
+export function resetSync(db: Db): void {
+  tx(db, () => {
+    db.run('UPDATE op SET pushed = 0');
+    db.run('DELETE FROM op_seen');
+    setMetaValue(db, 'cursor', '0');
+  });
+}
+
 export function setSyncCursor(db: Db, cursor: number): void {
   setMetaValue(db, 'cursor', String(cursor));
 }

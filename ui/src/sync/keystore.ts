@@ -1,6 +1,8 @@
-// Where the account lives. The AES key is non-extractable, so it can only be stored as a CryptoKey
-// (IndexedDB structured clone); the token sits beside it. The root key is never written anywhere.
-export type Account = { token: string; key: CryptoKey };
+// Where the account lives: the token, the non-extractable AES key (IndexedDB structured clone) and
+// the root key bytes. The root is kept so the enrolment code can be shown again later — which means
+// a script with same-origin access can export it, not merely use the AES key. That is the trade for
+// being able to enrol a second device without having saved the code at signup.
+export type Account = { token: string; key: CryptoKey; root: Uint8Array };
 
 export type AccountStore = {
   load(): Promise<Account | undefined>;

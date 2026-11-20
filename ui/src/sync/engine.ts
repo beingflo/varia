@@ -35,6 +35,8 @@ export function createEngine(options: {
   const transport = options.transport ?? httpTransport(base);
   const [status, setStatus] = createSignal<SyncStatus>({ state: 'off', pending: 0, last: 0, usage: 0, cap: 0, error: '' });
   const [enrolled, setEnrolled] = createSignal(false);
+  /** The enrolment code, recomputed from the stored root. Empty when the root is unknown. */
+  const [enrolment, setEnrolment] = createSignal('');
 
   let account: Account | undefined;
   let running = false;
@@ -92,7 +94,15 @@ export function createEngine(options: {
     }
   }
 
-  /** Creates an account and returns the enrolment code, which is the only time it can be shown. */
+  async function remember(token: string, root: Uint8Array): Promise<void> {
+    account = { token, key: await opKey(root), root };
+    await store.save(account);
+    setEnrolment(enrolmentCode(token, root));
+    setEnrolled(true);
+    attach();
+  }
+
+  /** Creates an account. The token is in the panel from now on, not only in the answer. */
   async function signup(): Promise<string> {
     const response = await fetch(`${base}/api/signup`, { method: 'POST', body: '{}' });
     if (response.status === 404) throw new Error('no sync service at this address (404)');
@@ -103,22 +113,30 @@ export function createEngine(options: {
     if (!response.ok) throw new Error(`signup failed: ${response.status}`);
     const { token } = (await response.json()) as { token: string };
     const root = newRootKey();
-    account = { token, key: await opKey(root) };
-    await store.save(account);
-    setEnrolled(true);
-    attach();
+    await remember(token, root);
     await run('after signup');
-    return enrolmentCode(token, root);
+    return enrolment();
   }
 
   /** Joins an existing account from its code. The first pull starts at cursor 0: the whole log. */
   async function enrol(code: string): Promise<void> {
     const { token, root } = parseEnrolmentCode(code);
-    account = { token, key: await opKey(root) };
-    await store.save(account);
-    setEnrolled(true);
-    attach();
+    await remember(token, root);
     await run('after enrolment');
+  }
+
+  /**
+   * Forgets the account, keeping every note. The op log goes back to being an outbox, so the whole
+   * local history can be pushed to a different account afterwards.
+   */
+  async function unlink(): Promise<void> {
+    await store.clear();
+    await repo.resetSync();
+    account = undefined;
+    setEnrolment('');
+    setEnrolled(false);
+    stop();
+    patch({ state: 'off', last: 0, pending: 0, error: '' });
   }
 
   // Tests run without a DOM; a browser always has one.
@@ -132,8 +150,11 @@ export function createEngine(options: {
         console.warn('sync storage unavailable', err); // private mode, disabled storage
         return;
       }
+      // A prototype does not migrate: an account stored before the root was kept is simply ignored.
+      if (account && !account.root) account = undefined;
       setEnrolled(Boolean(account));
       if (!account) return;
+      setEnrolment(enrolmentCode(account.token, account.root));
       attach();
       await run('on start');
     })();
@@ -167,5 +188,5 @@ export function createEngine(options: {
     listeners.splice(0).forEach((off) => off());
   }
 
-  return { status, enrolled, start, stop, run, signup, enrol, refreshPending };
+  return { status, enrolled, enrolment, start, stop, run, signup, enrol, unlink, refreshPending };
 }

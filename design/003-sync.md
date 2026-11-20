@@ -23,15 +23,19 @@ The root key never leaves the device. `HKDF-SHA256(root, info="varia/op")` gives
 key; the same construction will produce subkeys for blob ids and anything else. Keys are imported
 non-extractable, so an XSS can read what it can read today but cannot exfiltrate the key itself.
 
-Signup is the one moment raw key bytes exist: `getRandomValues(32)` produces both the enrolment code
-and the input to a non-extractable import, so there is no importable-then-exportable key at all
-(Firefox refuses `exportKey('raw')` on HKDF keys, and now it never matters):
+`getRandomValues(32)` produces the root key; HKDF derives the AES key from it, imported
+non-extractable. The root bytes themselves are stored in IndexedDB beside the AES key, so the
+enrolment code can be shown again on a later visit — the cost of that convenience is that a script
+with same-origin access can *export* the root key, not merely use the AES key it already has. The
+alternative, showing the code exactly once at signup and never again, is recorded here because it is
+the stronger choice if a passphrase ever wraps the root.
 
 ```
 varia1.<token>.<root key, base32>
 ```
 
-Shown as text and offered as a download. A second device pastes it once and then pulls from cursor 0.
+Shown in the sync panel (`⌘⇧S`) on every visit, and offered as a download. A second device pastes it
+once and then pulls from cursor 0.
 Losing every device and the enrolment code loses the data: there is no reset and no server-side
 recovery.
 
@@ -79,6 +83,10 @@ can be stored without exporting it. The root key is never written anywhere: sign
 and shows the enrolment code the one time it can exist, which is also why a lost code is a lost
 account. `⌘⇧S` opens the sync overlay: paste a code, or press Enter on the empty field to create an
 account and see the code for the first time.
+
+Unlinking is the one way out: it drops the account from the device and rewinds the outbox, so the
+same local history can be pushed to a different account. The old account's log stays on the server,
+unreadable without a code that device no longer holds.
 
 ## Implementation notes
 

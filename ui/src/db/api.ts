@@ -30,6 +30,7 @@ export interface Handlers {
   applyRemote(ops: Op[]): number;
   syncCursor(): number;
   setSyncCursor(cursor: number): void;
+  resetSync(): void;
   debugTables(): DebugTable[];
   debugRows(table: string, offset?: number, limit?: number): DebugPage;
 }

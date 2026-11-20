@@ -28,6 +28,7 @@ export function createHandlers(db: Db): Handlers {
     applyRemote: (ops) => repo.applyRemoteOps(db, ops),
     syncCursor: () => repo.syncCursor(db),
     setSyncCursor: (cursor) => repo.setSyncCursor(db, cursor),
+    resetSync: () => repo.resetSync(db),
     debugTables: () => repo.debugTables(db),
     debugRows: (table, offset, limit) => repo.debugRows(db, table, offset, limit),
   };

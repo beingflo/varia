@@ -40,3 +40,17 @@ Reading (`git log`, `git diff`, `jj log`) is fine. If a change warrants a commit
 `design/*.md` and `PLAN.md` describe the system at a high level. When a change alters the schema,
 the sync protocol, client structure, deployment or the phases, update the matching doc in the same
 piece of work. Keep edits crisp and high-level, and trim before adding.
+
+## Local servers: the user's, not the agent's
+
+The user runs the dev server (`localhost:5173`) and owns it. Never start, restart or kill it, and
+never bind the standard ports (5173, 4174, 4176, 8099). When a task needs a running app or service,
+start your own on a non-standard port and stop it afterwards, e.g.
+
+```
+VARIA_ADDR=127.0.0.1:8199 VARIA_DB=/tmp/varia-agent.sqlite ./server/target/debug/varia
+npx vite preview --port 5199 --strictPort
+```
+
+`vite preview`/`dev` proxy `/api` to `VARIA_API` (default `127.0.0.1:8099`), so point that at your own
+port instead of expecting the user's service.

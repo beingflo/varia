@@ -84,7 +84,16 @@ rather than a restore.
 overlay in `components/Sync.tsx` is testable against a fake engine.
 
 The view shows only what the engine's status says: `synced now · nothing pending`, `3 pending`,
-`sync failed — 429 rate_limited`, usage against the cap, and how old the last sync is. The inline
+`sync failed — 429 rate_limited`, usage against the cap, how old the last sync is, and the enrolment
+code with a download link, rebuilt from the stored root on every visit. Not enrolled, the panel takes
+the code with a filled primary button under the field (`join this device`, disabled until something
+is pasted; Enter does the same) and, below a rule, a separate quiet button for `create a new
+account` — joining and starting fresh are different actions and never share a control.
+
+`unlink this device` sits below the code, behind a second click, and does two things: forgets the
+token and root in IndexedDB, and turns the local op log back into an outbox (`pushed = 0`, cursor
+`0`, remote-dedup rows dropped). Notes are never touched, so unlinking and creating a new account
+uploads the entire local history to the new one. The inline
 status line next to the note stamp is still open (`PLAN.md` phase 3).
 
 ## PWA

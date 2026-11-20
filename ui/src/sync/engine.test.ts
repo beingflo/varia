@@ -48,7 +48,7 @@ function fakeService() {
 
 async function accountFor(token = 'token-from-signup') {
   const root = newRootKey();
-  return { account: { token, key: await opKey(root) } as Account, root, code: `varia1.${token}.${base32Encode(root)}` };
+  return { account: { token, key: await opKey(root), root } as Account, root, code: `varia1.${token}.${base32Encode(root)}` };
 }
 
 /** A repo that is already enrolled, so `run` has a key and a token. */
@@ -139,6 +139,49 @@ describe('sync engine', () => {
     expect(service.stored).toHaveLength(4); // one note_meta and three snapshots
     expect(await repo.unpushed()).toHaveLength(0);
     expect(engine.status().pending).toBe(0);
+  });
+
+  it('rebuilds the enrolment code from the stored root', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ token: 'tok-code' }), { status: 200 })));
+    const store = memoryStore();
+    const engine = createEngine({ repo: testRepo('device-a'), store, transport: fakeService().transport });
+    const code = await engine.signup();
+    expect(engine.enrolment()).toBe(code);
+    expect(parseEnrolmentCode(code).token).toBe('tok-code');
+
+    // A fresh session reads the account back: the code survives because the root does.
+    const restarted = createEngine({ repo: testRepo('device-b'), store, transport: fakeService().transport });
+    restarted.start();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(restarted.enrolment()).toBe(code);
+    restarted.stop();
+  });
+
+  it('unlinks the account and turns the whole log back into an outbox for the next one', async () => {
+    const service = fakeService();
+    const { repo, engine, store } = await enrolledEngine(service);
+    const id = await repo.createNote('note');
+    await repo.saveBody(id, 'kept locally');
+    await engine.run('test'); // no change listeners on the in-process repo: push explicitly
+    expect(await repo.unpushed()).toHaveLength(0);
+
+    await engine.unlink();
+
+    expect(engine.enrolled()).toBe(false);
+    expect(engine.enrolment()).toBe('');
+    expect(store.current).toBeUndefined();
+    // The notes are untouched; everything becomes pushable again and the cursor restarts.
+    expect((await repo.getNote(id))?.body).toBe('kept locally');
+    expect(await repo.unpushed()).toHaveLength(2);
+    expect(await repo.syncCursor()).toBe(0);
+
+    // A new account receives the entire local history on its first push.
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ token: 'tok-2' }), { status: 200 })));
+    const fresh = fakeService();
+    const rejoined = createEngine({ repo, store, transport: fresh.transport });
+    await rejoined.signup();
+    expect(fresh.stored).toHaveLength(2);
+    expect(await repo.unpushed()).toHaveLength(0);
   });
 
   it('starts from a stored account and is off without one', async () => {
