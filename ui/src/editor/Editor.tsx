@@ -203,5 +203,13 @@ export default function Editor(props: EditorProps) {
 
   onCleanup(() => view?.destroy());
 
-  return <div class="editor" ref={host} />;
+  // The wrapper fills the viewport while the editor box is only as tall as its text, so a click
+  // under the last line would otherwise hit the page and do nothing.
+  const clickUnderText = (event: MouseEvent) => {
+    if (!view || (event.target as Element).closest('.cm-editor')) return;
+    event.preventDefault(); // the default action would blur the view we are about to focus
+    focusEnd();
+  };
+
+  return <div class="editor" ref={host} onMouseDown={clickUnderText} />;
 }

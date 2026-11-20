@@ -112,6 +112,17 @@ test('saves on blur', async ({ page }) => {
   await expect(page.locator('.notes li', { hasText: 'saved by blur' })).toBeVisible();
 });
 
+test('a click under the text lands the caret at the end', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await editor(page).fill('short');
+  await page.locator('.cm-content').last().click({ position: { x: 5, y: 5 } }); // blur first
+  const box = await page.locator('.editor').boundingBox();
+  await page.mouse.click(box!.x + 40, box!.y + box!.height - 30); // empty space under the line
+  await page.keyboard.type(' and more');
+  await expectBody(page, 'short and more');
+});
+
 test('starts a new note from anywhere and searches the list', async ({ page }) => {
   await page.goto('/');
   await ready(page);
