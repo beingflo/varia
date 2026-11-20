@@ -57,7 +57,6 @@ Each phase is shippable on its own. Later phases must not force a change to the 
 - [x] tag stream: `/tag/<name>` lists the notes under a tag newest first, whole bodies, a timestamp
       rail, `⌘J` files an entry tagged `#log` plus the stream's tag (`design/004`)
 - [ ] export: zip of `*.md`, todo JSON and the raw op log; import that restores an account
-- [ ] warn when changes have been unsynced for days
 - [ ] token revocation and multiple tokens per account
 - [ ] todo reminders
 - [ ] screen showing deleted notes for recovery

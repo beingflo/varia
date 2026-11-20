@@ -29,17 +29,18 @@ async function seed() {
 afterEach(() => vi.restoreAllMocks());
 
 describe('tag stream', () => {
-  it('shows the entries newest first, whole, with the tag line stripped', async () => {
+  it('shows the entries newest first, whole, their tag line muted at the end', async () => {
     clock();
     const { repo } = await seed();
     renderWithRepo(() => <TagView tag="work" onOpen={() => {}} />, repo);
 
     const entries = await screen.findAllByText(/retry loop|sync with X/);
     expect(entries[0].textContent).toContain('the retry loop was the bug');
-    // The tags are the frame, not the entry: the last line does not show up in the text.
-    expect(entries[1].textContent).toBe('sync with X about the parser\n\ntried a bigger buffer');
-    expect(screen.getByText('#work')).toBeTruthy();
-    expect(screen.getByText('2')).toBeTruthy(); // the count next to the name
+    // The tag line is part of the entry, drawn apart so it can be muted.
+    expect(entries[1].querySelector('.tag-foot')?.textContent).toBe('#log #work');
+    expect(entries[1].textContent).toBe('sync with X about the parser\n\ntried a bigger buffer\n#log #work');
+    expect(screen.getByText('work')).toBeTruthy();
+    expect(screen.getByText('2 entries')).toBeTruthy(); // on the far side of the header
   });
 
   it('names a board instead of rendering its layout JSON', async () => {
@@ -47,7 +48,8 @@ describe('tag stream', () => {
     const { repo } = await seed();
     renderWithRepo(() => <TagView tag="dashboard" onOpen={() => {}} />, repo);
 
-    expect(await screen.findByText('Boards — ▦ 1 tile')).toBeTruthy();
+    const entry = await screen.findByText(/Boards — ▦ 1 tile/);
+    expect(entry.textContent).toBe('Boards — ▦ 1 tile\n#dashboard');
   });
 
   it('links an entry to its note, so a modified click can open a tab', async () => {
@@ -83,8 +85,8 @@ describe('tag stream', () => {
     });
     // The draft is gone: the entry is read-only in the stream now.
     await waitFor(() => expect(screen.queryByLabelText('note body')).toBeNull());
-    // The render keeps the newlines; the matcher collapses whitespace unless told not to.
-    expect(await screen.findByText('a fresh entry\n\nthe caret was the problem', { normalizer: (t) => t })).toBeTruthy();
+    const entry = await screen.findByText(/a fresh entry/);
+    expect(entry.textContent).toBe('a fresh entry\n\nthe caret was the problem\n#log #work');
   });
 
   it('keeps the tag line out of the document, so a background flush cannot cost the entry its tag', async () => {

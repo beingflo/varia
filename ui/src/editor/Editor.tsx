@@ -44,6 +44,38 @@ function decorateCodeBlocks(view: EditorView): DecorationSet {
   return builder.finish();
 }
 
+/** The tag line at the end of a body is a footer, not a sentence: grey it so it reads as one. */
+const tagLineMark = Decoration.mark({ class: 'cm-tagline' });
+
+function decorateTagLine(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  const { doc } = view.state;
+  // Same rule the database uses: the last non-empty line, and only tags on it.
+  for (let n = doc.lines; n > 0; n--) {
+    const line = doc.line(n);
+    if (!line.text.trim()) continue;
+    const tokens = line.text.trim().split(/\s+/);
+    if (!tokens.every((token) => /^#[\p{L}\p{N}_-]+$/u.test(token))) break;
+    const from = line.text.length - line.text.trimStart().length;
+    builder.add(line.from + from, line.to, tagLineMark);
+    break;
+  }
+  return builder.finish();
+}
+
+const tagLines = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = decorateTagLine(view);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged) this.decorations = decorateTagLine(update.view);
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
+
 const codeBlockLines = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
@@ -94,6 +126,9 @@ const theme = EditorView.theme({
     backgroundColor: 'color-mix(in srgb, var(--fg) 4%, transparent)',
   },
   '.cm-markup': { color: 'var(--fg)' },
+  // The tag line is the note's footer: muted, and its `#`s are markup like any other.
+  '.cm-tagline': { color: 'var(--muted)' },
+  '.cm-tagline .cm-markup': { color: 'var(--muted)' },
 });
 
 /**
@@ -132,6 +167,7 @@ function extensions(props: EditorProps): Extension[] {
     keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
     drawSelection(),
     codeBlockLines,
+    tagLines,
     EditorView.lineWrapping,
     theme,
     placeholder(props.placeholder ?? ''),

@@ -1,7 +1,7 @@
 import { createResource, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { useRepo } from '../db/context';
 import type { NoteSummary } from '../db/api';
-import { withoutTagLine } from '../db/ops';
+import { tagsOfLastLine } from '../db/ops';
 import { isDashboard, parseBoard } from '../lib/board';
 import { onCommand } from '../lib/commands';
 import { stamp } from '../lib/time';
@@ -62,20 +62,33 @@ export default function TagView(props: { tag: string; onOpen: (note: NoteSummary
     props.onOpen(note);
   };
 
-  const text = (note: NoteSummary) => {
-    // A board's body is a layout, not writing: one line naming it instead of raw JSON.
-    if (!isDashboard(note.body)) return withoutTagLine(note.body);
-    const tiles = parseBoard(note.body).tiles.length;
-    return `${note.title || '(untitled)'} — ▦ ${tiles} ${tiles === 1 ? 'tile' : 'tiles'}`;
+  /**
+   * The entry as it is written, minus its closing tag line, plus that line kept apart so it can be
+   * drawn muted the way the editor draws it. The stream repeats it on purpose: it is the entry's
+   * own record of which streams it belongs to.
+   */
+  const parts = (note: NoteSummary) => {
+    const lines = note.body.split('\n');
+    let last = lines.length - 1;
+    while (last >= 0 && !lines[last].trim()) last -= 1;
+    const tags = tagsOfLastLine(note.body);
+    const head = isDashboard(note.body)
+      ? (() => {
+          // A board's body is a layout, not writing: one line naming it instead of raw JSON.
+          const tiles = parseBoard(note.body).tiles.length;
+          return `${note.title || '(untitled)'} — ▦ ${tiles} ${tiles === 1 ? 'tile' : 'tiles'}`;
+        })()
+      : lines.slice(0, last).join('\n').replace(/\n+$/, '');
+    return { head, foot: tags.length ? lines[last] : '' };
   };
 
   return (
     <main class="tag-page" aria-label={`entries tagged ${props.tag}`}>
       <header class="tag-head">
-        <h1>
-          #{props.tag}
-          <span class="muted small"> {page()?.total ?? 0}</span>
-        </h1>
+        <h1>{props.tag}</h1>
+        <span class="tag-count">
+          {page()?.total ?? 0} {(page()?.total ?? 0) === 1 ? 'entry' : 'entries'}
+        </span>
       </header>
 
       <Show when={draft()}>
@@ -95,7 +108,13 @@ export default function TagView(props: { tag: string; onOpen: (note: NoteSummary
       <For each={rows()}>
         {(note) => (
           <article class="tag-entry">
-            <div class="tag-text">{text(note)}</div>
+            <div class="tag-text">
+              {parts(note).head}
+              <Show when={parts(note).foot}>
+                {parts(note).head ? '\n' : ''}
+                <span class="tag-foot">{parts(note).foot}</span>
+              </Show>
+            </div>
             <a class="tag-when" href={`${import.meta.env.BASE_URL}note/${note.id}`} onClick={open(note)}>
               {stamp(note.created)}
             </a>

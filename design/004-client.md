@@ -56,14 +56,17 @@ A tag is a stream, not a note type: `/tag/<name>` lists the text notes whose tag
 bodies, newest first (`created`, never `updated` — fixing a typo in last week's entry must not move
 it). Nothing is stored for the view.
 
-- **The stream is dumb on purpose.** No CodeMirror: entries are the body as text minus the tag line,
-  in the app's font with `pre-wrap`. Markdown is not interpreted, so an entry's first line keeps its
-  `#`. Editing happens in the note view, one click away through the timestamp.
+- **The stream is dumb on purpose.** No CodeMirror: entries are the body as text, in the app's font
+  with `pre-wrap`. Markdown is not interpreted, so an entry's first line keeps its `#`. Editing
+  happens in the note view, one click away through the timestamp.
+- **The tag line closes each entry**, on its own line, hugging the text, muted and a point smaller —
+  the same line the editor draws muted. Repeating it is the point: it is the entry's own record of
+  which streams it belongs to, in a `log` stream that mixes `#work` and `#urgent`.
 - **The timestamp is a real link** to `note/<id>`, right-aligned and top-aligned with the entry, so
   ⌘-click opens a tab. Under 60rem it moves above the entry: a rail would take a quarter of the
   column.
-- **The stream keeps the editor's measure**, `--measure` plus the rail, centred. A stream is read, so
-  it does not run the width of the screen; on a phone the column is the screen minus its padding.
+- **The stream is a column, not the screen**: 88rem (1408px) centred, the timestamp in its right
+  gutter, the entry text taking what is left. On a phone it is the screen minus its padding.
 - **`created` is the writer's clock.** Ordering across two devices therefore assumes roughly correct
   clocks; within a note, the version tree is the causal record.
 - **25 entries a page**, then a `load older` button. No virtualisation: the render is text, not
@@ -72,23 +75,27 @@ it). Nothing is stored for the view.
   renders as `title — ▦ 3 tiles`. That makes the `dashboard` tag a working index of boards.
 - Todo notes do not appear (their text lives in `todo_item`, so a text render would be empty).
 
-Writing an entry: `⌘J` (and, on a phone, the bar's `new entry`) opens one editable draft at the top.
-The view itself has no button — the header is the tag and its count, nothing else. The note on disk
-is the draft's text plus a tag line (`#log` and the stream's tag), written on every save of that
-draft's session; the **document never holds that line**, so the caret cannot land after it and a `⌘↓` before
-typing cannot quietly cost the entry its tag. Only `⌘S` ends the draft, and only after the flush, so
-the entry is on disk before it turns read-only; a background flush (sync, tab hidden) saves silently
-and leaves you writing. Nothing typed, nothing created. Once the entry exists, editing it is
-ordinary note editing — the tag line is in the body then, and keeping it last is the writer's
-business: no editor fence, no normalising on save.
+The header is the tag on the left, muted — the entries are what the eye should land on — and, in the
+far corner, how many entries it holds (`3 entries`), small and in full ink: the count answers "is
+this all of it", so it is the one thing up there that should be read. The view has no button.
+
+Writing an entry: `⌘J` (on a phone, the bar's `new entry` then `save`) opens one editable draft at the
+top. The note on disk is the draft's text plus a tag line (`#log` and the stream's tag), written on
+every save of that draft's session; the **document never holds that line**, so the caret cannot land
+after it and a `⌘↓` before typing cannot quietly cost the entry its tag. Only `⌘S` ends the draft, and
+only after the flush, so the entry is on disk before it turns read-only; a background flush (sync,
+tab hidden) saves silently and leaves you writing. Nothing typed, nothing created. Once the entry
+exists, editing it is ordinary note editing — the tag line is in the body then, and keeping it last
+is the writer's business: no editor fence, no normalising on save.
 
 The palette is three sections in that order: notes, log entries, tags. Notes and logs both answer the
 query — the note section excluding `log`, the log section limited to a few rows plus a count — and
 the tags sit below them, since a stream is a shortcut, not a result: listed before anything is typed,
 prefix match, and a leading `#` asks for tags only. The cursor walks the same order it shows. The
 note list itself hides `log` notes: the default screen stays notes.
-A full note view shows its tags as read-only chips under the text, each opening its stream; tiles and
-the stream show none.
+A note shows its tags where they are written: the last line is drawn muted in the editor, so the
+footer reads as a footer. No chip row on the note, in a tile or in the stream — the palette is how
+you get to a stream.
 
 ## Dashboards
 
@@ -322,6 +329,6 @@ It is built to be unable to hurt the app:
 ## UI rules
 
 One column, no chrome, no dashboards. Keyboard-first: `Cmd/Ctrl-K` search, `Cmd/Ctrl-N` new note,
-`Esc` back to the list. Tags are chips above the list and above the note. Everything tappable is
+`Esc` back to the list. A tag is a line at the end of a body, drawn muted. Everything tappable is
 keyboard-reachable, checkboxes are real checkboxes with labels, and motion respects
 `prefers-reduced-motion`.

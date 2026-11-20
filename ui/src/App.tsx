@@ -134,11 +134,7 @@ export default function App() {
           <TodoView id={open().id} onCreated={(id) => setOpen({ kind: 'todo', id })} />
         </Match>
         <Match when={true}>
-          <NoteView
-            id={open().id}
-            onCreated={(id) => setOpen({ kind: 'note', id })}
-            onTag={(tag) => void openTag(tag)}
-          />
+          <NoteView id={open().id} onCreated={(id) => setOpen({ kind: 'note', id })} />
         </Match>
       </Switch>
       <Show when={listOpen()}>

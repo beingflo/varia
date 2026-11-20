@@ -17,10 +17,11 @@ const ACTIONS: Record<BarKind, { command: Command; label: string }[]> = {
     { command: 'toggle-done', label: 'done' },
     { command: 'sync', label: 'sync' },
   ],
-  // A stream is for reading and for one gesture: file a new entry.
+  // A stream is for reading and for writing one entry: a keyboard has ⌘J and ⌘S, a finger needs both.
   tag: [
     { command: 'list', label: 'notes' },
     { command: 'new-entry', label: 'new entry' },
+    { command: 'save', label: 'save' },
     { command: 'sync', label: 'sync' },
   ],
   // No versions and no done toggle on a board: those act on one note, and a board is many.

@@ -1,4 +1,4 @@
-import { createEffect, createResource, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
+import { createEffect, createSignal, onCleanup, onMount, Show } from 'solid-js';
 import History from '../components/History';
 import Editor, { type EditorApi } from '../editor/Editor';
 import { useRepo } from '../db/context';
@@ -23,11 +23,8 @@ export default function NoteView(props: {
   tags?: string[];
   /** Overrides the embedded rule, for a draft in a stream that should start typing at once. */
   autoFocus?: boolean;
-  onTag?: (tag: string) => void;
 }) {
   const repo = useRepo();
-  // The note's tags are an index over its body, so they are read, never edited here.
-  const [tags, { refetch: refetchTags }] = createResource(() => props.id ?? '', (id) => (id ? repo.tagsOf(id) : []));
   const [noteId, setNoteId] = createSignal(props.id);
   const [body, setBody] = createSignal('');
   const [saved, setSaved] = createSignal('');
@@ -136,7 +133,6 @@ export default function NoteView(props: {
       ownNote = id;
       props.onCreated?.(id);
     }
-    if (mine()) void refetchTags();
   };
 
   const openHistory = async () => {
@@ -161,33 +157,8 @@ export default function NoteView(props: {
     if (props.embedded) void flush();
   });
 
-  const chips = (
-    <Show when={!props.embedded && (tags() ?? []).length}>
-      <ul class="tag-chips" aria-label="tags">
-        <For each={tags()}>
-          {(tag) => (
-            <li>
-              <a
-                href={`${import.meta.env.BASE_URL}tag/${tag}`}
-                onClick={(event) => {
-                  // Plain click stays in the app; a modified click is the browser's (a new tab).
-                  if (!props.onTag || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-                  event.preventDefault();
-                  props.onTag(tag);
-                }}
-              >
-                #{tag}
-              </a>
-            </li>
-          )}
-        </For>
-      </ul>
-    </Show>
-  );
-
   const editorBox = (
     <>
-      {chips}
       <Editor
         docKey={noteId() ?? 'draft'}
         ariaLabel="note body"

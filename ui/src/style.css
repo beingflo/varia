@@ -277,15 +277,17 @@ input[type='search']::-webkit-search-cancel-button { display: none; }
 /* A tag stream: the entries are the page, so nothing frames them. The timestamp is a right rail on
    a wide screen and a line above the entry where the rail would eat a quarter of the text. */
 .tag-page {
-  /* The reading measure plus the timestamp rail: a stream is read, so it keeps the column the
-     editor has instead of running the width of the screen. */
-  width: 100%; max-width: calc(var(--measure) + 11rem); margin-inline: auto;
+  /* A stream is read, so it keeps a column instead of running the width of the screen: wide enough
+     for a long entry and its timestamp, narrow enough not to. */
+  width: 100%; max-width: 88rem; margin-inline: auto;
   min-height: 100dvh; padding: 1.25rem clamp(1rem, 2vw, 2rem) 2rem;
   /* Entries are skimmed, not read line by line: the gaps are wider than a paragraph's. */
   display: flex; flex-direction: column; gap: clamp(2.5rem, 4.5vw, 4.5rem);
 }
 .tag-head { display: flex; align-items: baseline; gap: 1rem; }
 .tag-head h1 { margin: 0; flex: 1; min-width: 0; font-size: 1.4rem; font-weight: 600; }
+/* The count answers "is this all of it", not "what am I looking at": it sits away from the name. */
+.tag-count { flex: none; font-size: 0.8rem; color: var(--fg); }
 .tag-more { flex: none; font-size: 0.8rem; color: var(--ink); padding: 0.3rem 0.6rem; }
 .tag-more:hover { text-decoration: underline; text-underline-offset: 3px; }
 .tag-more { align-self: flex-start; color: var(--muted); }
@@ -296,12 +298,10 @@ input[type='search']::-webkit-search-cancel-button { display: none; }
 .tag-draft .editor { min-height: 4rem; max-width: none; margin-inline: 0; }
 .tag-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1.5rem; align-items: start; }
 .tag-text { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.5em; }
+/* The tag line closes its entry: muted, and a size down, so it reads as a footer under the text. */
+.tag-foot { color: var(--muted); font-size: calc(0.8rem + 1pt); }
 .tag-when { font-size: 0.8rem; color: var(--muted); white-space: nowrap; text-decoration: none; }
 .tag-when:hover { text-decoration: underline; text-underline-offset: 3px; }
-/* The note's tags, read-only: they are a line in the body, this is a shortcut to the stream. */
-.tag-chips { list-style: none; display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0 auto 1rem; padding: 0; width: 100%; max-width: var(--measure); }
-.tag-chips a { font-size: 0.8rem; color: var(--muted); text-decoration: none; }
-.tag-chips a:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
 @media (max-width: 60rem) {
   /* No room for a rail: the time moves above its entry. */
   .tag-entry { grid-template-columns: minmax(0, 1fr); gap: 0.35rem; }
