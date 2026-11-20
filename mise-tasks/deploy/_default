@@ -10,8 +10,16 @@ load_deploy_env
 
 host="${VARIA_HOST:-}"
 domain="${VARIA_DOMAIN:-}"
-port="${VARIA_PORT:-8080}"
+port="${VARIA_PORT:-8090}"
 [[ -n "$host" ]] || die "VARIA_HOST is empty; put it in .deploy.env (committed, non-secret)"
+
+# The host port is ours to choose, the container's is not (quadlet substitutes
+# nothing, so both placeholders are rendered below). Check it before building:
+# something else answering on that port is what makes the unit fail at startup.
+if ssh "$host" "curl -sf --max-time 2 -o /dev/null http://127.0.0.1:${port}/healthz" 2>/dev/null &&
+    ! ssh "$host" 'podman ps --format "{{.Names}}" | grep -qx systemd-varia'; then
+    die "127.0.0.1:${port} on ${host} is already serving something else; set VARIA_PORT in .deploy.env"
+fi
 
 command -v podman >/dev/null || die "podman not found"
 podman info >/dev/null 2>&1 || die "podman machine is not running"
@@ -26,8 +34,9 @@ note "shipping ${image} to ${host}"
 podman save "$image" | zstd -q -T0 | ssh "$host" 'zstd -q -d | podman load'
 ssh "$host" "podman tag ${image} localhost/varia:current"
 
-note "installing varia.container (${tag})"
-sed -e "s|__TAG__|${tag}|g" varia.container \
+note "installing varia.container (${tag}, port ${port})"
+# `__PORT__` is the host side of the publish, `8080` stays the container's own.
+sed -e "s|__TAG__|${tag}|g" -e "s|__PORT__|${port}|g" varia.container \
     | ssh "$host" 'mkdir -p "$HOME/.config/containers/systemd" && cat > "$HOME/.config/containers/systemd/varia.container"'
 
 note "restarting"

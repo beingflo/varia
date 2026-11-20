@@ -62,8 +62,12 @@ varia.container   quadlet unit: loopback port, varia-data:/data, keep-id uid 100
 mise-tasks/       dev, service:dev, ui:dev, test, test:e2e, deploy, deploy:build
 ```
 
+The container listens on 8080 and the host side comes from `VARIA_PORT` (default 8090, because 8080
+belongs to another service on the deploy host); `mise run deploy` renders both the tag and the port
+into the unit, since quadlet substitutes nothing.
+
 `mise run deploy` builds the image, ships it over SSH (`podman save | zstd | ssh | podman load`),
-installs the unit with the build tag substituted, restarts it, then checks three things: the
+installs the unit, restarts it, then checks three things: the
 container is running, `127.0.0.1:$VARIA_PORT/healthz` answers, and `https://$VARIA_DOMAIN/` carries
 all three isolation headers. A container that exits on startup leaves the unit inactive without an
 error, which is why the running check comes first.
@@ -71,7 +75,17 @@ error, which is why the running check comes first.
 Unlike the service this repo borrows its deploy from, nothing is secret: the log is encrypted
 client-side, so there are no podman secrets, no sops file and nothing to rotate. Caddy needs no
 header configuration — the binary sets COOP/COEP/CORP on every response — only a reverse proxy to
-the loopback port, in the separate `deployment` checkout.
+the loopback port, in the `eos-core` checkout:
+
+```
+varia.page {
+    reverse_proxy localhost:8090
+}
+www.varia.page { redir https://varia.page{uri} permanent }
+```
+
+The redirect is not cosmetic: the local SQLite database lives in OPFS, which is per origin, so a
+second hostname would be a second, empty notebook.
 
 `mise run dev` runs both dev servers with job control, so Ctrl-C stops both. The service listens on
 `127.0.0.1:8099` and writes `.varia-dev.sqlite`; Vite proxies `/api` there.

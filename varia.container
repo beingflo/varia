@@ -5,8 +5,10 @@ After=network-online.target
 
 [Container]
 Image=localhost/varia:__TAG__
-# Caddy reaches it on the loopback port; nothing else on the host needs the port.
-PublishPort=127.0.0.1:8080:8080
+# Caddy reaches it on the loopback port; nothing else on the host needs it. The
+# host side is rendered in by `mise run deploy` from VARIA_PORT, because quadlet
+# does no substitution and 8080 already belongs to another service on eos.
+PublishPort=127.0.0.1:__PORT__:8080
 
 # The encrypted op log lives in one SQLite file on a named volume. That file is
 # the whole server state: a copy of it is a backup, and it is unreadable without
