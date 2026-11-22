@@ -1,6 +1,6 @@
 // The one surface views are allowed to touch: no SQL, no connection, just calls.
 import type {
-  Db, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, Version, VersionHead, VersionMeta, VersionPair,
+  Db, ImportedNote, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, Version, VersionHead, VersionMeta, VersionPair,
 } from './types';
 
 /** `sort: 'created'` is a journal's chronology; the default stays "what did I touch last". */
@@ -23,6 +23,7 @@ export interface Handlers {
   getNote(id: string): Note | undefined;
   createNote(kind: NoteKind, title?: string): string;
   saveBody(noteId: string, body: string): boolean;
+  importNotes(notes: ImportedNote[]): number;
   setNoteMeta(noteId: string, change: { title?: string; tags?: string[]; deleted?: boolean }): void;
   versions(noteId: string): VersionMeta[];
   versionPair(noteId: string, versionId: string): VersionPair | undefined;
@@ -59,4 +60,4 @@ export type Repo = { [K in keyof Handlers]: (...args: Parameters<Handlers[K]>) =
   readonly error?: Error | null;
 };
 
-export type { Db, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, Version, VersionHead, VersionMeta };
+export type { Db, ImportedNote, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, Version, VersionHead, VersionMeta };

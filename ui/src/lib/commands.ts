@@ -12,6 +12,7 @@ export type Command =
   | 'history'
   | 'toggle-done'
   | 'sync'
+  | 'import'
   | 'debug';
 
 const handlers = new Map<Command, () => void>();
@@ -63,7 +64,7 @@ type Mod = 'mod' | 'alt' | 'shift';
 type Chord = { key: string; mods: Mod[] };
 
 /** The one shortcut table: `commandFor` looks commands up here, the landing page lists them. */
-export const BINDINGS: { command: Command; label: string; chords: Chord[] }[] = [
+export const BINDINGS: { command: Command; label: string; chords: Chord[]; hidden?: boolean }[] = [
   {
     command: 'list',
     label: 'find or switch note',
@@ -130,6 +131,16 @@ export const BINDINGS: { command: Command; label: string; chords: Chord[] }[] = 
     ],
   },
   { command: 'sync', label: 'sync', chords: [{ key: 's', mods: ['mod', 'shift'] }] },
+  // One-off migration tool: bound, but not advertised on the landing page.
+  {
+    command: 'import',
+    label: 'import notes',
+    hidden: true,
+    chords: [
+      { key: 'i', mods: ['mod'] },
+      { key: 'i', mods: ['mod', 'alt'] },
+    ],
+  },
   { command: 'debug', label: 'debug overlay', chords: [{ key: 'd', mods: ['mod', 'shift'] }] },
 ];
 

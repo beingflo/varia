@@ -48,6 +48,41 @@ describe('database setup', () => {
   });
 });
 
+describe('import', () => {
+  it('writes one meta and one snapshot per note, keeps the old dates, and refuses a second import', () => {
+    const db = fresh();
+    const notes = [
+      { id: 'fn-1', createdAt: 1_633_823_136_000, modifiedAt: 1_640_000_000_000, body: '## Old note\n\nbody' },
+      { id: 'fn-2', createdAt: 1_700_000_000_000, modifiedAt: 1_700_000_000_000, body: '# Second' },
+    ];
+
+    expect(repo.importNotes(db, notes)).toBe(2);
+
+    const note = repo.getNote(db, 'fn-1')!;
+    expect(note.title).toBe('Old note');
+    expect(note.body).toBe('## Old note\n\nbody');
+    expect(note.created).toBe(notes[0].createdAt);
+    expect(note.updated).toBe(notes[0].modifiedAt);
+    expect(repo.heads(db, 'fn-1')).toHaveLength(1);
+    expect(repo.listNotes(db)).toHaveLength(2);
+
+    expect(() => repo.importNotes(db, notes)).toThrow(/already here/);
+    expect(repo.listNotes(db)).toHaveLength(2);
+  });
+
+  it('writes nothing when any note in the file is already here', () => {
+    const db = fresh();
+    repo.importNotes(db, [{ id: 'fn-1', createdAt: 1, modifiedAt: 1, body: 'one' }]);
+    expect(() =>
+      repo.importNotes(db, [
+        { id: 'fn-2', createdAt: 1, modifiedAt: 1, body: 'two' },
+        { id: 'fn-1', createdAt: 1, modifiedAt: 1, body: 'one again' },
+      ]),
+    ).toThrow(/fn-1/);
+    expect(repo.listNotes(db).map((n) => n.id)).toEqual(['fn-1']);
+  });
+});
+
 describe('notes', () => {
   it('creates a note with a title derived from the first body line', () => {
     const db = fresh();

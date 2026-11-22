@@ -1,5 +1,6 @@
 import { createEffect, createSignal, Match, onCleanup, onMount, Show, Switch } from 'solid-js';
 import HistoryHost from './components/History';
+import Import from './components/Import';
 import MobileBar from './components/MobileBar';
 import Sync from './components/Sync';
 import SyncDot from './components/SyncDot';
@@ -34,6 +35,7 @@ export default function App() {
   const engine = createEngine({ repo, store: idbAccount });
   const [open, setOpen] = createSignal<Open>({ kind: 'note' });
   const [syncOpen, setSyncOpen] = createSignal(false);
+  const [importOpen, setImportOpen] = createSignal(false);
   const [linked, setLinked] = createSignal(linkedId === null && linkedTag === null);
   const [listOpen, setListOpen] = createSignal(false);
 
@@ -102,6 +104,11 @@ export default function App() {
         setListOpen(false);
         setSyncOpen(true);
       }),
+      onCommand('import', async () => {
+        await flushAll();
+        setListOpen(false);
+        setImportOpen(true);
+      }),
       onCommand('delete', async () => {
         // Flush first: a draft just saved by ⌘S only has an id once its flush finished.
         await flushAll();
@@ -165,6 +172,9 @@ export default function App() {
       </Show>
       <Show when={syncOpen()}>
         <Sync onClose={() => setSyncOpen(false)} />
+      </Show>
+      <Show when={importOpen()}>
+        <Import onClose={() => setImportOpen(false)} />
       </Show>
       <MobileBar kind={open().kind} />
       <SyncDot />

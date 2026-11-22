@@ -4,7 +4,7 @@ import { migrate } from './schema';
 import { beats, between, tagsOfLastLine, titleFromBody, type Stamp } from './ops';
 import type { NoteFilter } from './api';
 import type {
-  Db, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, OpKind, Version, VersionHead, VersionMeta, VersionPair,
+  Db, ImportedNote, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, OpKind, Version, VersionHead, VersionMeta, VersionPair,
 } from './types';
 
 type Stamps = Record<string, Stamp>;
@@ -85,12 +85,11 @@ function tx<T>(db: Db, fn: () => T): T {
  *  the outbox. Rejected at the boundary, not filtered out later. */
 const MAX_OP_PAYLOAD = 4_500_000;
 
-function appendOp(db: Db, kind: OpKind, noteId: string, payload: Record<string, unknown>): Op {
+function appendOp(db: Db, kind: OpKind, noteId: string, payload: Record<string, unknown>, created = Date.now()): Op {
   const serialized = JSON.stringify(payload);
   if (serialized.length > MAX_OP_PAYLOAD) throw new Error('this change is too large to sync (over 4 MB)');
   const device = deviceId(db);
   const lamport = Number(meta(db, 'lamport') ?? '0') + 1;
-  const created = Date.now();
   setMetaValue(db, 'lamport', String(lamport));
 
   const op: Op = { id: crypto.randomUUID(), device, kind, note_id: noteId, lamport, created, payload };
@@ -277,6 +276,29 @@ export function createNote(db: Db, kind: NoteKind, title = ''): string {
 }
 
 /** Writes a snapshot only when the body differs from the current one; returns whether it wrote. */
+/**
+ * The one-off migration path: a whole note as one meta and one snapshot, in one transaction, with
+ * the dates the old system had. All or nothing, and never twice for the same id.
+ */
+export function importNotes(db: Db, notes: ImportedNote[]): number {
+  return tx(db, () => {
+    for (const note of notes) {
+      if (db.get('SELECT 1 FROM note WHERE id = ?', [note.id])) {
+        throw new Error(`note ${note.id} is already here: this file was imported before`);
+      }
+      appendOp(db, 'note_meta', note.id, { kind: 'note', title: '', tags: [], deleted: false }, note.createdAt);
+      appendOp(
+        db,
+        'note_snapshot',
+        note.id,
+        { version_id: crypto.randomUUID(), parent_version_id: null, body: note.body },
+        note.modifiedAt,
+      );
+    }
+    return notes.length;
+  });
+}
+
 export function saveBody(db: Db, noteId: string, body: string): boolean {
   return tx(db, () => {
     const note = db.get<Note>('SELECT * FROM note WHERE id = ?', [noteId]);

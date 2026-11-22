@@ -11,6 +11,7 @@ export function createHandlers(db: Db): Handlers {
     getNote: (id) => repo.getNote(db, id),
     createNote: (kind, title) => repo.createNote(db, kind, title),
     saveBody: (noteId, body) => repo.saveBody(db, noteId, body),
+    importNotes: (notes) => repo.importNotes(db, notes),
     setNoteMeta: (noteId, change) => repo.setNoteMeta(db, noteId, change),
     versions: (noteId) => repo.versions(db, noteId),
     versionPair: (noteId, versionId) => repo.versionPair(db, noteId, versionId),

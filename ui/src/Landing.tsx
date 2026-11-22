@@ -85,7 +85,7 @@ export default function Landing() {
         <div class="wrap">
           <h2>shortcuts</h2>
           <dl class="keys">
-            <For each={BINDINGS}>
+            <For each={BINDINGS.filter((binding) => !binding.hidden)}>
               {(binding) => (
                 <>
                   <dt>

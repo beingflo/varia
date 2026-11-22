@@ -206,7 +206,7 @@ export default function Sync(props: { onClose: () => void }) {
   );
 
   return (
-    <section class="overlay" aria-label="sync">
+    <section class="overlay form" aria-label="sync">
       <button type="button" class="overlay-close" onClick={props.onClose}>
         close
       </button>
