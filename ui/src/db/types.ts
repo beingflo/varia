@@ -9,8 +9,8 @@ export interface Db {
 
 export type NoteKind = 'note' | 'todo';
 
-/** A note the one-off importer writes verbatim: finished history, not an edit. */
-export type ImportedNote = { id: string; createdAt: number; modifiedAt: number; body: string };
+/** A note the one-off importer writes verbatim: finished history, not an edit. It gets a fresh id. */
+export type ImportedNote = { createdAt: number; modifiedAt: number; body: string };
 export type OpKind = 'note_meta' | 'note_snapshot' | 'todo_item';
 
 export interface Op {

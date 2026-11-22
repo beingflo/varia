@@ -7,7 +7,6 @@ const EXAMPLE = `{
   "count": 1,
   "notes": [
     {
-      "oldId": 1075,
       "createdAt": "2026-11-20T21:52:22.982216+00:00",
       "modifiedAt": "2026-11-20T21:52:22.982216+00:00",
       "body": "## Varia test sync token\\n\\n14c3b821…"
@@ -73,9 +72,9 @@ export default function Import(props: { onClose: () => void }) {
       <p class="muted small">the file must hold one entry per note:</p>
       <pre class="code">{EXAMPLE}</pre>
       <p class="muted small">
-        <code>oldId</code> is the old note's id and becomes this note's id, so the same file can never be
-        imported twice. <code>createdAt</code> and <code>modifiedAt</code> are kept as the
-        note's dates, and <code>body</code> is the note as Markdown, title line included.
+        <code>createdAt</code> and <code>modifiedAt</code> are kept as the note's dates, and{' '}
+        <code>body</code> is the note as Markdown, title line included. Every note gets a new id, like one
+        created here, so importing the same file twice adds it twice.
       </p>
       <input
         type="file"

@@ -49,37 +49,28 @@ describe('database setup', () => {
 });
 
 describe('import', () => {
-  it('writes one meta and one snapshot per note, keeps the old dates, and refuses a second import', () => {
+  it('writes an ordinary note per entry, with a fresh id and the old dates', () => {
     const db = fresh();
-    const notes = [
-      { id: 'fn-1', createdAt: 1_633_823_136_000, modifiedAt: 1_640_000_000_000, body: '## Old note\n\nbody' },
-      { id: 'fn-2', createdAt: 1_700_000_000_000, modifiedAt: 1_700_000_000_000, body: '# Second' },
-    ];
+    const dates = { createdAt: 1_633_823_136_000, modifiedAt: 1_640_000_000_000 };
+    expect(repo.importNotes(db, [{ ...dates, body: '## Old note\n\nbody' }, { ...dates, body: '# Second' }])).toBe(2);
 
-    expect(repo.importNotes(db, notes)).toBe(2);
+    const notes = repo.listNotes(db);
+    expect(notes).toHaveLength(2);
+    expect(new Set(notes.map((n) => n.id)).size).toBe(2); // one fresh id per note
 
-    const note = repo.getNote(db, 'fn-1')!;
-    expect(note.title).toBe('Old note');
+    const note = repo.getNote(db, notes.find((n) => n.title === 'Old note')!.id)!;
     expect(note.body).toBe('## Old note\n\nbody');
-    expect(note.created).toBe(notes[0].createdAt);
-    expect(note.updated).toBe(notes[0].modifiedAt);
-    expect(repo.heads(db, 'fn-1')).toHaveLength(1);
-    expect(repo.listNotes(db)).toHaveLength(2);
-
-    expect(() => repo.importNotes(db, notes)).toThrow(/already here/);
-    expect(repo.listNotes(db)).toHaveLength(2);
+    expect(note.created).toBe(dates.createdAt);
+    expect(note.updated).toBe(dates.modifiedAt);
+    expect(repo.heads(db, note.id)).toHaveLength(1);
   });
 
-  it('writes nothing when any note in the file is already here', () => {
+  it('adds the same file again as new notes: a fresh id per import', () => {
     const db = fresh();
-    repo.importNotes(db, [{ id: 'fn-1', createdAt: 1, modifiedAt: 1, body: 'one' }]);
-    expect(() =>
-      repo.importNotes(db, [
-        { id: 'fn-2', createdAt: 1, modifiedAt: 1, body: 'two' },
-        { id: 'fn-1', createdAt: 1, modifiedAt: 1, body: 'one again' },
-      ]),
-    ).toThrow(/fn-1/);
-    expect(repo.listNotes(db).map((n) => n.id)).toEqual(['fn-1']);
+    const note = { createdAt: 1, modifiedAt: 1, body: '## one' };
+    repo.importNotes(db, [note]);
+    repo.importNotes(db, [note]);
+    expect(repo.listNotes(db)).toHaveLength(2);
   });
 });
 

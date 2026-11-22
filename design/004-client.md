@@ -148,8 +148,11 @@ The note list marks one with `▦`, and `⌘⇧B` makes one.
 - **Notes**: a CodeMirror 6 editor over the Markdown source. Highlighting, list continuation
   (Enter continues `-`/`1.`, enters increment, an empty item exits the list), Tab nesting and fenced
   code highlighting all live in the editor; the document is still plain text, so the log, history and
-  sync see exactly what a textarea would have written. The syntax highlighting is the reading aid: a
-  separate rendered view is not planned. Vim mode is a possible later addition (`PLAN.md`), the reason
+  sync see exactly what a textarea would have written. Links (markdown links, autolinks and bare
+  `http(s)` URLs) are underlined and open with ⌘/Ctrl-click, never a plain one: a URL is still text
+  to put a caret in. ⌘/Ctrl+F is the editor's own search, not the browser's find: CodeMirror renders
+  only the viewport, so the browser's find can neither see nor scroll to text further down a long
+  note. The syntax highlighting is the reading aid: a separate rendered view is not planned. Vim mode is a possible later addition (`PLAN.md`), the reason
   CodeMirror was chosen over a hand-rolled editor or a WYSIWYG model.
 - **Pulled versions**: a flush on a clean editor is not an edit. When the text on screen equals the
   last saved text, the flush takes the database's body instead of re-committing the old one, so a

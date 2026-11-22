@@ -278,19 +278,18 @@ export function createNote(db: Db, kind: NoteKind, title = ''): string {
 /** Writes a snapshot only when the body differs from the current one; returns whether it wrote. */
 /**
  * The one-off migration path: a whole note as one meta and one snapshot, in one transaction, with
- * the dates the old system had. All or nothing, and never twice for the same id.
+ * the dates the old system had. Every note gets a fresh id, so an imported note is an ordinary note
+ * — which also means importing the same file twice adds it twice.
  */
 export function importNotes(db: Db, notes: ImportedNote[]): number {
   return tx(db, () => {
     for (const note of notes) {
-      if (db.get('SELECT 1 FROM note WHERE id = ?', [note.id])) {
-        throw new Error(`note ${note.id} is already here: this file was imported before`);
-      }
-      appendOp(db, 'note_meta', note.id, { kind: 'note', title: '', tags: [], deleted: false }, note.createdAt);
+      const id = crypto.randomUUID();
+      appendOp(db, 'note_meta', id, { kind: 'note', title: '', tags: [], deleted: false }, note.createdAt);
       appendOp(
         db,
         'note_snapshot',
-        note.id,
+        id,
         { version_id: crypto.randomUUID(), parent_version_id: null, body: note.body },
         note.modifiedAt,
       );
