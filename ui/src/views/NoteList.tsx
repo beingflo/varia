@@ -1,36 +1,45 @@
 import { createEffect, createResource, createSignal, For, onCleanup, onMount, Show } from 'solid-js';
 import { useRepo } from '../db/context';
-import type { NoteSummary } from '../db/api';
-import { isDashboard } from '../lib/board';
+import type { SearchHit, SearchPage } from '../db/api';
 import { ago } from '../lib/time';
 
-/** The reserved tag journal entries carry: hidden from the note list, its own section in search. */
-const LOG = 'log';
 /** Tags in the palette are a shortcut, not a section; a `#` query asks for them all. */
 const TAG_HINT = 4;
-/** Log entries answer a query too, but only the first few: the stream is one click away. */
-const LOG_HINT = 4;
-
-type Page = { notes: NoteSummary[]; logs: NoteSummary[]; logTotal: number };
+/** A keystroke is cheaper than a query: the list follows once the typing pauses. */
+const DEBOUNCE = 120;
+/** Rows drawn at most: every row is a DOM subtree, and thousands of them cost more than the query. */
+const LIMIT = 200;
 
 /** Fullscreen, opaque, keyboard driven: ⌘K opens it, Esc closes it, arrows and Enter pick. */
 export default function NoteList(props: {
-  onOpen: (note: NoteSummary) => void;
+  onOpen: (note: SearchHit) => void;
   onClose: () => void;
   /** The note that is open behind the list, marked so you can see where you are. */
   currentId?: string;
-  /** Hidden from the list, for a picker that already holds them: a board cannot hold a board. */
-  exclude?: (note: NoteSummary) => boolean;
+  /** Hidden from the list, for a picker that already holds them: a board cannot hold another. */
+  excludeTag?: string;
   /** Given by the palette, not by a picker: makes tags rows that open a stream. */
   onTag?: (tag: string) => void;
 }) {
   const repo = useRepo();
   const [q, setQ] = createSignal('');
+  const [query, setQuery] = createSignal('');
   const [cursor, setCursor] = createSignal(0);
 
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const flush = () => {
+    clearTimeout(timer);
+    setQuery(q());
+  };
+  const settle = () => {
+    clearTimeout(timer);
+    timer = setTimeout(flush, DEBOUNCE);
+  };
+  onCleanup(() => clearTimeout(timer));
+
   // A leading `#` means "I am naming a tag": then only tags answer, and all of them.
-  const tagMode = () => q().trim().startsWith('#');
-  const term = () => q().trim().replace(/^#/, '').trim();
+  const tagMode = () => query().trim().startsWith('#');
+  const term = () => query().trim().replace(/^#/, '').trim();
 
   // Tags are listed before anything is typed: the streams are a place to go, not only a match.
   const [tags, { refetch: refetchTags }] = createResource(
@@ -39,43 +48,31 @@ export default function NoteList(props: {
   );
   const tagNames = (): string[] => (tags() ?? []).slice(0, tagMode() ? undefined : TAG_HINT);
 
-  // Filtered here rather than in the fetch, so a picker hides what it already holds without a
-  // second round trip — and the cursor indexes the same list the rows do.
-  const visible = (notes: NoteSummary[]) => notes.filter((note) => !props.exclude?.(note));
-
   const [page, { refetch }] = createResource(
     () => ({ query: term(), onlyTags: tagMode() }),
-    async ({ query, onlyTags }): Promise<Page> => {
-      if (onlyTags) return { notes: [], logs: [], logTotal: 0 };
-      return {
-        notes: visible(await repo.listNotes({ q: query, excludeTag: LOG })),
-        logs: await repo.listNotes({ q: query, tag: LOG, limit: LOG_HINT }),
-        logTotal: await repo.countNotes({ q: query, tag: LOG }),
-      };
-    },
+    async ({ query, onlyTags }): Promise<SearchPage> =>
+      onlyTags ? { hits: [], total: 0 } : repo.searchNotes({ q: query, excludeTag: props.excludeTag, limit: LIMIT }),
   );
   // The previous page stays on screen while the next one loads: typing must not blank the list.
-  const [lastPage, setLastPage] = createSignal<Page>();
+  const [lastPage, setLastPage] = createSignal<SearchPage>();
   createEffect(() => {
     const loaded = page();
     if (loaded) setLastPage(loaded);
   });
-  const shown = () => page() ?? lastPage();
-  const noteList = (): NoteSummary[] => shown()?.notes ?? [];
-  const logList = (): NoteSummary[] => shown()?.logs ?? [];
-  /** The flat order the cursor walks, which is also the order on screen: notes, logs, then tags. */
-  const rows = (): number => tagNames().length + noteList().length + logList().length;
+  const shown = (): SearchPage => page() ?? lastPage() ?? { hits: [], total: 0 };
+  const noteList = (): SearchHit[] => shown().hits;
+  /** The flat order the cursor walks, which is also the order on screen: notes, then tags. */
+  const rows = (): number => tagNames().length + noteList().length;
 
   createEffect(() => {
-    q();
+    query();
     setCursor(0);
   });
 
   const pick = (index: number) => {
-    const notes = noteList();
-    const note = notes[index] ?? logList()[index - notes.length];
+    const note = noteList()[index];
     if (note) return props.onOpen(note);
-    const tag = tagNames()[index - notes.length - logList().length];
+    const tag = tagNames()[index - noteList().length];
     if (tag) props.onTag?.(tag);
   };
 
@@ -95,16 +92,17 @@ export default function NoteList(props: {
     if (event.key === 'Escape') {
       event.preventDefault();
       props.onClose();
-    } else if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      move(1);
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      move(-1);
-    } else if (event.key === 'Enter') {
-      event.preventDefault();
-      pick(cursor());
+      return;
     }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Enter') return;
+    event.preventDefault();
+    // A key that picks must never act on the previous query's rows: settle first, act on the next.
+    if (q() !== query()) {
+      flush();
+      return;
+    }
+    if (event.key === 'Enter') pick(cursor());
+    else move(event.key === 'ArrowDown' ? 1 : -1);
   };
 
   let search: HTMLInputElement | undefined;
@@ -120,7 +118,7 @@ export default function NoteList(props: {
   });
   onCleanup(() => window.removeEventListener('keydown', onKey, true));
 
-  const noteRow = (note: NoteSummary, index: number, log: boolean) => (
+  const noteRow = (note: SearchHit, index: number) => (
     <li class={index === cursor() ? 'on' : ''}>
       <a
         href="/"
@@ -135,7 +133,7 @@ export default function NoteList(props: {
         </span>
         <span class={note.title ? 'title-text' : 'title-text muted'}>
           {note.title || '(untitled)'}
-          {isDashboard(note.body) ? ' ▦' : note.kind === 'todo' ? ' ~' : ''}
+          {note.kind === 'todo' ? ' ~' : ''}
         </span>
         <span class="muted small">{ago(note.updated)}</span>
       </a>
@@ -154,60 +152,51 @@ export default function NoteList(props: {
         placeholder="search"
         aria-label="search notes"
         value={q()}
-        onInput={(e) => setQ(e.currentTarget.value)}
+        onInput={(e) => {
+          setQ(e.currentTarget.value);
+          settle();
+        }}
       />
 
-      <Show when={shown()}>
-        {(loaded) => (
-          <>
-            <Show when={!tagMode()}>
-              <Show when={props.onTag}>
-                <h2 class="row-head">notes</h2>
-              </Show>
-              <ul class="notes">
-                <For each={noteList()} fallback={<li class="muted">{term() ? 'no match' : 'nothing yet'}</li>}>
-                  {(note, index) => noteRow(note, index(), false)}
-                </For>
-              </ul>
+      <Show when={page() ?? lastPage()}>
+        <Show when={!tagMode()}>
+          <Show when={props.onTag}>
+            <h2 class="row-head">notes</h2>
+          </Show>
+          <ul class="notes">
+            <For each={noteList()} fallback={<li class="muted">{term() ? 'no match' : 'nothing yet'}</li>}>
+              {(note, index) => noteRow(note, index())}
+            </For>
+          </ul>
+          <Show when={noteList().length < shown().total}>
+            <p class="muted small">{shown().total - noteList().length} more</p>
+          </Show>
+        </Show>
 
-              <Show when={logList().length}>
-                <h2 class="row-head">
-                  logs <span class="muted small">{(loaded() as { logTotal: number }).logTotal}</span>
-                </h2>
-                <ul class="notes">
-                  <For each={logList()}>
-                    {(note, index) => noteRow(note, noteList().length + index(), true)}
-                  </For>
-                </ul>
-              </Show>
-            </Show>
-
-            <Show when={tagNames().length}>
-              <h2 class="row-head">tags</h2>
-              <ul class="notes">
-                <For each={tagNames()}>
-                  {(name, index) => (
-                    <li class={(tagMode() ? 0 : noteList().length + logList().length) + index() === cursor() ? 'on' : ''}>
-                      <a
-                        href={`${import.meta.env.BASE_URL}tag/${name}`}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          props.onTag?.(name);
-                        }}
-                      >
-                        <span class="dot" aria-hidden="true" />
-                        <span class="title-text">#{name}</span>
-                      </a>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </Show>
-            <Show when={tagMode() && !tagNames().length}>
-              <p class="muted small">no tag matches</p>
-            </Show>
-          </>
-        )}
+        <Show when={tagNames().length}>
+          <h2 class="row-head">tags</h2>
+          <ul class="notes">
+            <For each={tagNames()}>
+              {(name, index) => (
+                <li class={(tagMode() ? 0 : noteList().length) + index() === cursor() ? 'on' : ''}>
+                  <a
+                    href={`${import.meta.env.BASE_URL}tag/${name}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      props.onTag?.(name);
+                    }}
+                  >
+                    <span class="dot" aria-hidden="true" />
+                    <span class="title-text">#{name}</span>
+                  </a>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
+        <Show when={tagMode() && !tagNames().length}>
+          <p class="muted small">no tag matches</p>
+        </Show>
       </Show>
     </section>
   );

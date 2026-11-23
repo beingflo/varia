@@ -16,6 +16,12 @@ export default function Debug(props: { repo: Repo; onClose: () => void }) {
     (key) => props.repo.debugRows(key.table, key.offset, PAGE),
   );
 
+  // The search probe: counts on open, plan and timing once there is a query to match.
+  const [typed, setTyped] = createSignal('');
+  const [probed, setProbed] = createSignal('');
+  const [probe, { refetch: refetchProbe }] = createResource(probed, (q) => props.repo.debugSearch({ q }));
+  const check = () => (typed() === probed() ? void refetchProbe() : setProbed(typed()));
+
   const onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape') props.onClose();
   };
@@ -31,6 +37,7 @@ export default function Debug(props: { repo: Repo; onClose: () => void }) {
   const refresh = () => {
     void refetchTables();
     void refetchPage();
+    void refetchProbe();
   };
 
   // A failed resource re-throws when read; a debugging tool must never do that, so every
@@ -52,6 +59,39 @@ export default function Debug(props: { repo: Repo; onClose: () => void }) {
           close
         </button>
       </header>
+
+      <section class="probe">
+        <input
+          aria-label="probe search"
+          placeholder="type a search to time it"
+          value={typed()}
+          onInput={(e) => setTyped(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            e.stopPropagation();
+            check();
+          }}
+        />
+        <button type="button" onClick={check}>
+          check
+        </button>
+        <Show when={probe()}>
+          {(report) => (
+            <>
+              <span class="muted">
+                index {report().indexed} / notes {report().notes}
+                {report().duplicates ? ` · ${report().duplicates} rows indexed twice` : ''}
+                {report().hits === null ? '' : ` · ${report().hits} hits · ${report().ms} ms`}
+              </span>
+              <Show when={report().plan.length}>
+                <span class="plan">{report().plan.join(' · ')}</span>
+              </Show>
+            </>
+          )}
+        </Show>
+        <Show when={probe.error}>{(err) => <span class="error">{String((err() as Error)?.message ?? err())}</span>}</Show>
+      </section>
 
       <div class="body">
         <nav>

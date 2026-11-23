@@ -8,6 +8,7 @@ export function createHandlers(db: Db): Handlers {
     deviceId: () => repo.deviceId(db),
     listNotes: (filter) => repo.listNotes(db, filter),
     countNotes: (filter) => repo.countNotes(db, filter),
+    searchNotes: (filter) => repo.searchNotes(db, filter),
     getNote: (id) => repo.getNote(db, id),
     createNote: (kind, title) => repo.createNote(db, kind, title),
     saveBody: (noteId, body) => repo.saveBody(db, noteId, body),
@@ -36,5 +37,6 @@ export function createHandlers(db: Db): Handlers {
     purge: () => repo.purge(db),
     debugTables: () => repo.debugTables(db),
     debugRows: (table, offset, limit) => repo.debugRows(db, table, offset, limit),
+    debugSearch: (filter) => repo.debugSearch(db, filter),
   };
 }

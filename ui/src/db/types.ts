@@ -41,6 +41,20 @@ export interface NoteSummary extends Note {
   item_count: number;
 }
 
+/** A search hit: what a palette row draws, and nothing that would have to cross the boundary. */
+export interface SearchHit {
+  id: string;
+  kind: NoteKind;
+  title: string;
+  updated: number;
+}
+
+/** A page of hits and how many matched in all, so a capped list can say what it left out. */
+export interface SearchPage {
+  hits: SearchHit[];
+  total: number;
+}
+
 export interface Version {
   id: string;
   note_id: string;

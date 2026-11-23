@@ -1,12 +1,13 @@
 // The one surface views are allowed to touch: no SQL, no connection, just calls.
 import type {
-  Db, ImportedNote, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, Version, VersionHead, VersionMeta, VersionPair,
+  Db, ImportedNote, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, SearchHit, SearchPage, Version, VersionHead, VersionMeta, VersionPair,
 } from './types';
 
 /** `sort: 'created'` is a journal's chronology; the default stays "what did I touch last". */
 export type NoteFilter = {
   tag?: string;
   excludeTag?: string;
+  /** Search terms; only `searchNotes` reads it. */
   q?: string;
   kind?: NoteKind;
   sort?: 'created';
@@ -14,12 +15,22 @@ export type NoteFilter = {
 };
 export type DebugTable = { name: string; count: number };
 export type DebugPage = { columns: string[]; rows: Record<string, unknown>[]; total: number };
+/** What the debug overlay's search probe reports: `hits`/`ms`/`plan` only for a query with terms. */
+export type DebugSearch = {
+  notes: number;
+  indexed: number;
+  duplicates: number;
+  hits: number | null;
+  ms: number | null;
+  plan: string[];
+};
 
 /** Synchronous implementation, used inside the worker and directly in tests. */
 export interface Handlers {
   deviceId(): string;
   listNotes(filter?: NoteFilter): NoteSummary[];
   countNotes(filter?: NoteFilter): number;
+  searchNotes(filter?: NoteFilter): SearchPage;
   getNote(id: string): Note | undefined;
   createNote(kind: NoteKind, title?: string): string;
   saveBody(noteId: string, body: string): boolean;
@@ -50,6 +61,7 @@ export interface Handlers {
   purge(): void;
   debugTables(): DebugTable[];
   debugRows(table: string, offset?: number, limit?: number): DebugPage;
+  debugSearch(filter?: NoteFilter): DebugSearch;
 }
 
 /** What views call: the same calls, asynchronous, across the worker boundary. */
@@ -60,4 +72,4 @@ export type Repo = { [K in keyof Handlers]: (...args: Parameters<Handlers[K]>) =
   readonly error?: Error | null;
 };
 
-export type { Db, ImportedNote, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, Version, VersionHead, VersionMeta };
+export type { Db, ImportedNote, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, SearchHit, SearchPage, Version, VersionHead, VersionMeta };

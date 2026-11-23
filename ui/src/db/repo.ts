@@ -2,9 +2,9 @@
 // so local edits and pulled ops share one code path (design/002).
 import { migrate } from './schema';
 import { beats, between, tagsOfLastLine, titleFromBody, type Stamp } from './ops';
-import type { NoteFilter } from './api';
+import type { DebugSearch, NoteFilter } from './api';
 import type {
-  Db, ImportedNote, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, OpKind, Version, VersionHead, VersionMeta, VersionPair,
+  Db, ImportedNote, Item, ItemChange, ItemFields, Note, NoteKind, NoteSummary, Op, OpKind, SearchHit, SearchPage, Version, VersionHead, VersionMeta, VersionPair,
 } from './types';
 
 type Stamps = Record<string, Stamp>;
@@ -410,13 +410,48 @@ function noteWhere(filter: NoteFilter): { clause: string; params: unknown[] } {
     where.push('NOT EXISTS(SELECT 1 FROM note_tag t WHERE t.note_id = n.id AND t.name = ?)');
     params.push(filter.excludeTag);
   }
-  if (filter.q) {
-    const like = `%${filter.q.replace(/[%_]/g, (m) => `\\${m}`)}%`;
-    where.push(`(n.title LIKE ? ESCAPE '\\' OR n.body LIKE ? ESCAPE '\\' OR EXISTS(
-      SELECT 1 FROM todo_item i WHERE i.note_id = n.id AND i.deleted = 0 AND i.text LIKE ? ESCAPE '\\'))`);
-    params.push(like, like, like);
-  }
   return { clause: where.join(' AND '), params };
+}
+
+/** One statement, shared with the debug probe, so the probe times and explains what a search runs. */
+function searchQuery(filter: NoteFilter): { from: string; where: string; params: unknown[]; terms: string[] } {
+  const terms = (filter.q ?? '').split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const where = ['n.deleted = 0'];
+  const params: unknown[] = [];
+  if (terms.length) {
+    where.push('note_fts MATCH ?');
+    params.push(terms.map((term) => `"${term}"*`).join(' AND '));
+  }
+  if (filter.excludeTag) {
+    where.push('NOT EXISTS(SELECT 1 FROM note_tag t WHERE t.note_id = n.id AND t.name = ?)');
+    params.push(filter.excludeTag);
+  }
+  return {
+    terms,
+    params,
+    from: `note n ${terms.length ? 'JOIN note_fts f ON f.rowid = n.rowid' : ''}`,
+    where: where.join(' AND '),
+  };
+}
+
+/**
+ * The palette's query: an FTS5 match of one prefixed term per word, in the note's own document
+ * (title, body, item texts — design/002). `detail=none` has no positions, so a term is a single
+ * token and never a phrase: it is split on everything that is not a letter or a digit. No terms
+ * at all is the picker's "everything", the list the palette opens with.
+ */
+export function searchNotes(db: Db, filter: NoteFilter = {}): SearchPage {
+  const { from, where, params } = searchQuery(filter);
+  return {
+    hits: db.all<SearchHit>(
+      `SELECT n.id, n.kind, n.title, n.updated FROM ${from} WHERE ${where} ORDER BY n.updated DESC${
+        filter.limit ? ' LIMIT ?' : ''
+      }`,
+      filter.limit ? [...params, filter.limit] : params,
+    ),
+    // Every match, not just the page: a capped list must never hide how much it left out.
+    total: db.get<{ n: number }>(`SELECT count(*) AS n FROM ${from} WHERE ${where}`, params)?.n ?? 0,
+  };
 }
 
 export function listNotes(db: Db, filter: NoteFilter = {}): NoteSummary[] {
@@ -555,6 +590,37 @@ export function debugRows(db: Db, table: string, offset = 0, limit = 100): Debug
   ]);
   const total = db.get<{ n: number }>(`SELECT count(*) AS n FROM ${table}`)?.n ?? 0;
   return { columns, rows, total };
+}
+
+/**
+ * Is the index there, is the query using it, and what does it cost? Counts are read always; the
+ * plan, the hits and the timing only once there is something to match, since a query without terms
+ * is the plain listing and says nothing about the index.
+ */
+export function debugSearch(db: Db, filter: NoteFilter = {}): DebugSearch {
+  const count = (sql: string) => db.get<{ n: number }>(sql)?.n ?? 0;
+  const { from, where, params, terms } = searchQuery(filter);
+  const sql = `SELECT n.id, n.kind, n.title, n.updated FROM ${from} WHERE ${where} ORDER BY n.updated DESC`;
+  if (!terms.length) {
+    return {
+      notes: count('SELECT count(*) AS n FROM note'),
+      indexed: count('SELECT count(*) AS n FROM note_fts'),
+      duplicates: count('SELECT count(*) AS n FROM (SELECT rowid FROM note_fts GROUP BY rowid HAVING count(*) > 1)'),
+      hits: null,
+      ms: null,
+      plan: [],
+    };
+  }
+  const started = performance.now();
+  const hits = db.all(sql, params).length;
+  return {
+    notes: count('SELECT count(*) AS n FROM note'),
+    indexed: count('SELECT count(*) AS n FROM note_fts'),
+    duplicates: count('SELECT count(*) AS n FROM (SELECT rowid FROM note_fts GROUP BY rowid HAVING count(*) > 1)'),
+    hits,
+    ms: Math.round((performance.now() - started) * 10) / 10,
+    plan: db.all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, params).map((row) => row.detail),
+  };
 }
 
 export function syncCursor(db: Db, account: string): number {

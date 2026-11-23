@@ -35,6 +35,22 @@ describe('Note list overlay', () => {
     await waitFor(() => expect(screen.queryByText('coalesce the retries')).toBeNull());
   });
 
+  it('settles typing before a key picks, instead of opening the previous query’s row', async () => {
+    const { repo, list } = await seed();
+    const onOpen = vi.fn();
+    renderWithRepo(() => <NoteList onOpen={onOpen} onClose={() => {}} />, repo);
+
+    await screen.findByText('work ~');
+    // The list still shows every note; Enter must not open one of them.
+    fireEvent.input(screen.getByLabelText('search notes'), { target: { value: 'milk' } });
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(onOpen).not.toHaveBeenCalled();
+
+    await waitFor(() => expect(screen.queryByText('coalesce the retries')).toBeNull());
+    fireEvent.keyDown(window, { key: 'Enter' });
+    await waitFor(() => expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: list })));
+  });
+
   it('opens the highlighted note with Enter and the clicked one with a click', async () => {
     const { repo, list } = await seed();
     const onOpen = vi.fn();
@@ -112,25 +128,20 @@ describe('Note list overlay', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('offers tags and log entries in their own sections, and hides logs from the notes', async () => {
+  it('offers tags in their own section, and lists an entry like any other note', async () => {
     const repo = testRepo();
     const work = await repo.createNote('note');
     await repo.saveBody(work, 'a real note\n\n#work');
-    const log = await repo.createNote('note');
-    await repo.saveBody(log, 'journal line\n\n#log #work');
+    const entry = await repo.createNote('note');
+    await repo.saveBody(entry, 'journal line\n\n#work');
     const onTag = vi.fn();
     renderWithRepo(() => <NoteList onOpen={() => {}} onClose={() => {}} onTag={onTag} />, repo);
 
     // An empty query already lists the tags: a stream is a place to go, not only a match.
     expect(await screen.findByText('#work')).toBeTruthy();
-    expect(screen.getByText('journal line')).toBeTruthy(); // the log section
+    expect(screen.getByText('journal line')).toBeTruthy();
     expect(screen.getByText('a real note')).toBeTruthy();
-    // Notes first, then logs, then the tag shortcuts.
-    expect([...document.querySelectorAll('.row-head')].map((h) => h.textContent?.split(' ')[0])).toEqual([
-      'notes',
-      'logs',
-      'tags',
-    ]);
+    expect([...document.querySelectorAll('.row-head')].map((h) => h.textContent)).toEqual(['notes', 'tags']);
 
     fireEvent.click(screen.getByText('#work'));
     expect(onTag).toHaveBeenCalledWith('work');

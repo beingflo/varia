@@ -18,9 +18,9 @@ function clock() {
 async function seed() {
   const repo = testRepo();
   const first = await repo.createNote('note');
-  await repo.saveBody(first, 'sync with X about the parser\n\ntried a bigger buffer\n\n#log #work');
+  await repo.saveBody(first, 'sync with X about the parser\n\ntried a bigger buffer\n\n#work');
   const second = await repo.createNote('note');
-  await repo.saveBody(second, 'the retry loop was the bug\n\n#log #work');
+  await repo.saveBody(second, 'the retry loop was the bug\n\n#work');
   const board = await repo.createNote('note');
   await repo.saveBody(board, '# Boards\n\n{"note":"a","w":1,"h":1}\n\n#dashboard');
   return { repo, first, second, board };
@@ -37,8 +37,8 @@ describe('tag stream', () => {
     const entries = await screen.findAllByText(/retry loop|sync with X/);
     expect(entries[0].textContent).toContain('the retry loop was the bug');
     // The tag line is part of the entry, drawn apart so it can be muted.
-    expect(entries[1].querySelector('.tag-foot')?.textContent).toBe('#log #work');
-    expect(entries[1].textContent).toBe('sync with X about the parser\n\ntried a bigger buffer\n#log #work');
+    expect(entries[1].querySelector('.tag-foot')?.textContent).toBe('#work');
+    expect(entries[1].textContent).toBe('sync with X about the parser\n\ntried a bigger buffer\n#work');
     expect(screen.getByText('work')).toBeTruthy();
     expect(screen.getByText('2 entries')).toBeTruthy(); // on the far side of the header
   });
@@ -67,7 +67,7 @@ describe('tag stream', () => {
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: second }));
   });
 
-  it('files a new entry with the stream tag and #log, and only ⌘S ends it', async () => {
+  it('files a new entry under the stream tag, and only ⌘S ends it', async () => {
     clock();
     const { repo } = await seed();
     renderWithRepo(() => <TagView tag="work" onOpen={() => {}} />, repo);
@@ -79,14 +79,14 @@ describe('tag stream', () => {
     runCommand('save');
 
     await waitFor(async () => {
-      const log = await repo.listNotes({ tag: 'log', sort: 'created' });
-      expect(log.length).toBe(3);
-      expect(log[0].body).toBe('a fresh entry\n\nthe caret was the problem\n\n#log #work');
+      const entries = await repo.listNotes({ tag: 'work', sort: 'created' });
+      expect(entries.length).toBe(3);
+      expect(entries[0].body).toBe('a fresh entry\n\nthe caret was the problem\n\n#work');
     });
     // The draft is gone: the entry is read-only in the stream now.
     await waitFor(() => expect(screen.queryByLabelText('note body')).toBeNull());
     const entry = await screen.findByText(/a fresh entry/);
-    expect(entry.textContent).toBe('a fresh entry\n\nthe caret was the problem\n#log #work');
+    expect(entry.textContent).toBe('a fresh entry\n\nthe caret was the problem\n#work');
   });
 
   it('keeps the tag line out of the document, so a background flush cannot cost the entry its tag', async () => {
@@ -100,8 +100,8 @@ describe('tag stream', () => {
     fireEvent.input(editor, { target: { value: 'a longer thought' } });
     // A sync (or the tab hiding) flushes: the note exists now, but nobody said "done".
     await flushAll(true);
-    expect(await repo.listNotes({ tag: 'log' })).toHaveLength(3);
-    expect((await repo.listNotes({ tag: 'log', sort: 'created' }))[0].body).toBe('a longer thought\n\n#log #work');
+    expect(await repo.listNotes({ tag: 'work' })).toHaveLength(3);
+    expect((await repo.listNotes({ tag: 'work', sort: 'created' }))[0].body).toBe('a longer thought\n\n#work');
 
     // Writing on: the caret is nowhere near a tag line, because the document has none.
     expect(editor.value).toBe('a longer thought');
@@ -110,9 +110,9 @@ describe('tag stream', () => {
 
     await waitFor(async () => {
       const entries = await repo.listNotes({ tag: 'work', sort: 'created' });
-      expect(entries[0].body).toBe('a longer thought\nand then some\n\n#log #work');
+      expect(entries[0].body).toBe('a longer thought\nand then some\n\n#work');
       // One tag line, not one per save.
-      expect(entries[0].body.match(/#log/g)).toHaveLength(1);
+      expect(entries[0].body.match(/#work/g)).toHaveLength(1);
     });
     expect(await screen.findByText(/and then some/)).toBeTruthy();
   });
@@ -122,9 +122,9 @@ describe('tag stream', () => {
     const repo = testRepo();
     for (let i = 0; i < 27; i++) {
       const id = await repo.createNote('note');
-      await repo.saveBody(id, `entry ${i}\n\n#log`);
+      await repo.saveBody(id, `entry ${i}\n\n#work`);
     }
-    renderWithRepo(() => <TagView tag="log" onOpen={() => {}} />, repo);
+    renderWithRepo(() => <TagView tag="work" onOpen={() => {}} />, repo);
 
     expect(await screen.findByText('entry 26')).toBeTruthy();
     expect(screen.queryByText('entry 0')).toBeNull();

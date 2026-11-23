@@ -36,6 +36,21 @@ describe('Debug overlay', () => {
     await waitFor(() => expect(screen.getByText('stamps')).toBeTruthy());
   });
 
+  it('probes the search index: how much is indexed, the plan, and the time', async () => {
+    const repo = await seed();
+    render(() => <Debug repo={repo} onClose={() => {}} />);
+
+    // Counts arrive without a query: one note, one document in the index.
+    await waitFor(() => expect(document.querySelector('.probe')?.textContent).toContain('index 1 / notes 1'));
+
+    fireEvent.input(screen.getByLabelText('probe search'), { target: { value: 'second' } });
+    fireEvent.click(screen.getByText('check'));
+
+    // The statement has to be answered by the index, not by scanning the notes.
+    await waitFor(() => expect(document.querySelector('.probe .plan')?.textContent).toContain('VIRTUAL TABLE'));
+    expect(document.querySelector('.probe')?.textContent).toContain('1 hits');
+  });
+
   it('shows the whole row as json when clicked', async () => {
     const repo = await seed();
     render(() => <Debug repo={repo} onClose={() => {}} />);

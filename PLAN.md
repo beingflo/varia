@@ -17,9 +17,11 @@ Each phase is shippable on its own. Later phases must not force a change to the 
 - [x] notes: list, create, edit Markdown, delete, tag
 - [x] todos: item list, check/uncheck, append, hide-done toggle, show-done
 - [x] history: versions of a note
-- [x] search over note bodies and todo items
+- [x] search over note bodies and todo items: an FTS5 index, every word of the query matched as a
+      prefix and all of them required (`design/002`, `design/004`)
 - [x] PWA: installable, offline shell, persistence request (best effort)
-- [x] debug overlay: every table incl. the op log, `⌘⇧D` or `?debug`, own chunk and error boundary
+- [x] debug overlay: every table incl. the op log, `⌘⇧D` or `?debug`, own chunk and error boundary,
+      plus a search probe: documents vs notes, duplicates, the query plan and how long a search took
 
 ## Phase 2: Sync
 
@@ -51,11 +53,10 @@ Each phase is shippable on its own. Later phases must not force a change to the 
 - [ ] vim mode for the note editor (the editor is behind one component)
 - [ ] quick capture: `…/?q=work buy milk` opens the `work` todo list with a new item appended
 - [x] tags: the last line of a body names them (`#work #urgent`, nothing else on the line), derived
-      into `note_tag` on every body write on every device, backfilled once for older notes; the note
-      list hides `log`, search has tags/notes/logs sections, a note shows its tags as chips
-      (`design/002`)
+      into `note_tag` on every body write on every device, backfilled once for older notes; search
+      has tags/notes sections, a note shows its tags as chips (`design/002`)
 - [x] tag stream: `/tag/<name>` lists the notes under a tag newest first, whole bodies, a timestamp
-      rail, `⌘J` files an entry tagged `#log` plus the stream's tag (`design/004`)
+      rail, `⌘J` files an entry tagged with the stream's tag (`design/004`)
 - [ ] export: zip of `*.md`, todo JSON and the raw op log; import that restores an account
 - [ ] token revocation and multiple tokens per account
 - [ ] todo reminders

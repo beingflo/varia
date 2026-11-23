@@ -271,17 +271,59 @@ describe('todo items', () => {
 });
 
 describe('search', () => {
-  it('matches note bodies, item texts and escaped wildcards', () => {
+  it('matches every term of the query, wherever it sits in the note', () => {
+    const db = fresh();
+    const note = repo.createNote(db, 'note');
+    repo.saveBody(db, note, 'hello world bye');
+    const list = repo.createNote(db, 'todo', 'groceries');
+    repo.addItem(db, list, 'buy 100% cacao');
+
+    expect(repo.searchNotes(db, { q: 'hello bye' }).hits.map((n) => n.id)).toEqual([note]);
+    expect(repo.searchNotes(db, { q: 'bye hello' }).hits.map((n) => n.id)).toEqual([note]);
+    // One term in the title, the other in an item: still one note.
+    expect(repo.searchNotes(db, { q: 'groceries cacao' }).hits.map((n) => n.id)).toEqual([list]);
+    expect(repo.searchNotes(db, { q: 'hello cacao' }).hits).toEqual([]);
+  });
+
+  it('matches word prefixes, and punctuation only ever splits terms', () => {
     const db = fresh();
     const note = repo.createNote(db, 'note');
     repo.saveBody(db, note, 'about the coalesce operator');
     const list = repo.createNote(db, 'todo');
     repo.addItem(db, list, 'buy 100% cacao');
 
-    expect(repo.listNotes(db, { q: 'coalesce' }).map((n) => n.id)).toEqual([note]);
-    expect(repo.listNotes(db, { q: 'cacao' }).map((n) => n.id)).toEqual([list]);
-    expect(repo.listNotes(db, { q: '100%' }).map((n) => n.id)).toEqual([list]);
-    expect(repo.listNotes(db, { q: '10%' })).toEqual([]);
+    expect(repo.searchNotes(db, { q: 'coa' }).hits.map((n) => n.id)).toEqual([note]);
+    // Inside a word there is nothing to find: the index holds tokens, not substrings.
+    expect(repo.searchNotes(db, { q: 'alesc' }).hits).toEqual([]);
+    // `100%` is the token `100`, so both spellings are the same prefix.
+    expect(repo.searchNotes(db, { q: '100%' }).hits.map((n) => n.id)).toEqual([list]);
+    expect(repo.searchNotes(db, { q: '10%' }).hits.map((n) => n.id)).toEqual([list]);
+  });
+
+  it('leaves out deleted notes and a tag the asker already holds', () => {
+    const db = fresh();
+    const board = repo.createNote(db, 'note');
+    repo.saveBody(db, board, '# Board\n\n#dashboard');
+    const gone = repo.createNote(db, 'note');
+    repo.saveBody(db, gone, 'board notes');
+    repo.setNoteMeta(db, gone, { deleted: true });
+
+    expect(repo.searchNotes(db, { q: 'board' }).hits.map((n) => n.id)).toEqual([board]);
+    expect(repo.searchNotes(db, { q: 'board', excludeTag: 'dashboard' }).hits).toEqual([]);
+    // No terms is the picker's "everything": the palette opens with the list, not with nothing.
+    expect(repo.searchNotes(db, {}).hits.map((n) => n.id)).toEqual([board]);
+  });
+
+  it('caps the list but says how many matched', () => {
+    const db = fresh();
+    for (let i = 0; i < 3; i++) {
+      const id = repo.createNote(db, 'note');
+      repo.saveBody(db, id, `note ${i} about coalesce`);
+    }
+
+    const page = repo.searchNotes(db, { q: 'coalesce', limit: 2 });
+    expect(page.hits).toHaveLength(2);
+    expect(page.total).toBe(3);
   });
 });
 

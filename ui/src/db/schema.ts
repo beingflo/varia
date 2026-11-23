@@ -1,7 +1,6 @@
 import type { Db } from './types';
 
 // The client owns the schema: the server keeps only an encrypted log (design/002).
-// shortcut: LIKE search over note bodies and item texts, switch to FTS5 when notes reach a few MB.
 const migration1 = `
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 
@@ -144,7 +143,56 @@ function migration5(db: Db): void {
   `);
 }
 
-const migrations: (string | ((db: Db) => void))[] = [migration1, migration2, migration3, migration4, migration5];
+/**
+ * One searchable document per note: title, body and its live item texts in a single row, so a term
+ * in the body and a term in an item still match the same note. Contentless because the text already
+ * lives in `note`/`todo_item`, and `detail=none` because the query only ever ANDs prefixed terms —
+ * never phrases — which keeps the index a tenth of the size instead of doubling it.
+ */
+const doc = (title: string, body: string, id: string) =>
+  `${title} || char(10) || ${body} || char(10) || coalesce((SELECT group_concat(text, char(10))
+     FROM todo_item WHERE note_id = ${id} AND deleted = 0), '')`;
+
+// Keys on `note.rowid`, which nothing rewrites (a VACUUM would; the index is derived, so the fix
+// is a rebuild). An item's hard delete only happens in `purge`, where the note goes with it.
+// shortcut: the backfill is one transaction at boot, seconds at a few MB and minutes near 500 MB —
+// chunk it with progress when notes get that big.
+const migration6 = `
+CREATE VIRTUAL TABLE note_fts USING fts5(doc, content='', detail=none, contentless_delete=1,
+  tokenize='unicode61');
+CREATE TRIGGER note_fts_ai AFTER INSERT ON note BEGIN
+  INSERT INTO note_fts(rowid, doc) VALUES (new.rowid, ${doc('new.title', 'new.body', 'new.id')});
+END;
+CREATE TRIGGER note_fts_ad AFTER DELETE ON note BEGIN
+  DELETE FROM note_fts WHERE rowid = old.rowid;
+END;
+CREATE TRIGGER note_fts_au AFTER UPDATE OF title, body ON note BEGIN
+  DELETE FROM note_fts WHERE rowid = old.rowid;
+  INSERT INTO note_fts(rowid, doc) VALUES (new.rowid, ${doc('new.title', 'new.body', 'new.id')});
+END;
+CREATE TRIGGER item_fts_ai AFTER INSERT ON todo_item BEGIN
+  DELETE FROM note_fts WHERE rowid = (SELECT rowid FROM note WHERE id = new.note_id);
+  INSERT INTO note_fts(rowid, doc) SELECT n.rowid, ${doc('n.title', 'n.body', 'n.id')}
+    FROM note n WHERE n.id = new.note_id;
+END;
+CREATE TRIGGER item_fts_au AFTER UPDATE OF text, deleted ON todo_item BEGIN
+  DELETE FROM note_fts WHERE rowid = (SELECT rowid FROM note WHERE id = new.note_id);
+  INSERT INTO note_fts(rowid, doc) SELECT n.rowid, ${doc('n.title', 'n.body', 'n.id')}
+    FROM note n WHERE n.id = new.note_id;
+END;
+
+INSERT INTO note_fts(rowid, doc) SELECT rowid, ${doc('title', 'body', 'id')} FROM note;
+`;
+
+const migrations: (string | ((db: Db) => void))[] = [
+  migration1, migration2, migration3, migration4, migration5, searchIndex,
+];
+
+/** Like `migration5`: a database whose version was rewound keeps the index it already has. */
+function searchIndex(db: Db): void {
+  if (db.get("SELECT 1 FROM sqlite_master WHERE name = 'note_fts'")) return;
+  db.exec(migration6);
+}
 
 export function migrate(db: Db): void {
   const row = db.get<{ user_version: number }>('PRAGMA user_version');

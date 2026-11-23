@@ -152,17 +152,20 @@ export default function App() {
             setListOpen(false);
             focusEditor();
           }}
-          onOpen={async (note) => {
+          onOpen={async (hit) => {
             const current = open();
-            if (current.id === note.id) {
+            if (current.id === hit.id) {
               // Already there: nothing to load, so no handshake to wait for.
               setListOpen(false);
               focusEditor();
               return;
             }
             await flushAll();
+            // A hit carries no body, and the kind of view is decided by it: a board says so in
+            // its last line. One read on the click, not on every row of the list.
+            const note = await repo.getNote(hit.id);
             const ready = armViewReady();
-            setOpen({ kind: kindOf(note), id: note.id });
+            setOpen({ kind: note ? kindOf(note) : 'note', id: hit.id });
             // Close the overlay on a loaded view, not on the previous note's text.
             await Promise.race([ready, new Promise((resolve) => setTimeout(resolve, 150))]);
             setListOpen(false);

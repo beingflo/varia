@@ -83,6 +83,16 @@ open, flagged in `meta(tags_indexed)`.
 client sets it any more: it is the shape an older peer sends, and the next body snapshot of that
 note overwrites it with what the body says.
 
+### Search
+
+`note_fts` is the second index over the body, derived exactly like `note_tag`: one FTS5 document per
+note holding its title, body and live item texts, so a term in the body and a term in an item match
+the same note. Triggers on `note` and `todo_item` maintain it, which covers every writer — a local
+save, a pulled op, an import — and it is contentless and positionless (`detail=none`), so it stores
+no text and answers prefixed terms only, never phrases. That is what a query means: every word of
+it, as a prefix, in any order (`design/004`). Bodies that predate it are indexed by the migration
+that creates it.
+
 ## Note history
 
 `version.parent_id` makes the history of a note a tree.

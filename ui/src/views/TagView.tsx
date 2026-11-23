@@ -35,7 +35,7 @@ export default function TagView(props: { tag: string; onOpen: (note: NoteSummary
   const rows = () => (page()?.notes ?? []).slice(0, limit()).filter((note) => note.id !== draftId());
   const more = () => (page()?.notes ?? []).length > limit();
 
-  const tagsForDraft = () => (props.tag === 'log' ? ['log'] : ['log', props.tag]);
+  const tagsForDraft = () => [props.tag];
 
   // Only ⌘S ends an entry: a background flush (a sync, the tab going away) saves it silently and
   // leaves you writing. `runCommand('save')` calls this after the flush, so the note exists.

@@ -28,6 +28,10 @@ nav button.on { background: #1d1d20; color: #fff; }
 main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .toolbar { display: flex; gap: .5rem; align-items: center; padding: .35rem .6rem; border-bottom: 1px solid #2c2c2e; flex: none; }
 .toolbar .muted { color: #6d6d70; }
+.probe { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; padding: .35rem .6rem; border-bottom: 1px solid #2c2c2e; flex: none; }
+.probe input { font: inherit; color: inherit; background: #16161a; border: 1px solid #3a3a3c; border-radius: 4px; padding: .1rem .4rem; width: 18rem; }
+.probe .muted { color: #9a9a9f; }
+.probe .plan { color: #6d6d70; width: 100%; }
 .scroll { flex: 1; overflow: auto; }
 table { border-collapse: collapse; font-size: 11.5px; width: max-content; min-width: 100%; }
 th, td { text-align: left; padding: .12rem .55rem; border-bottom: 1px solid #202023; vertical-align: top; white-space: nowrap; max-width: 26rem; overflow: hidden; text-overflow: ellipsis; }

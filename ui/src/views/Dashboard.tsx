@@ -119,7 +119,7 @@ export default function Dashboard(props: { id: string; onOpen?: (note: Note) => 
 
       <Show when={picking()}>
         <NoteList
-          exclude={(note) => isDashboard(note.body)}
+          excludeTag="dashboard"
           onOpen={(note) => {
             setPicking(false);
             commit(withTile(board(), note.id));
