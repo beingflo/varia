@@ -47,12 +47,12 @@ describe('tag lines', () => {
 
   it('strips exactly that line, and nothing else', () => {
     expect(withoutTagLine('entry\n\n#work')).toBe('entry');
-    expect(withoutTagLine('a\n\nb\n\n#work #log\n')).toBe('a\n\nb');
+    expect(withoutTagLine('a\n\nb\n\n#urgent #work\n')).toBe('a\n\nb');
     // No tag line: the body comes back untouched, blank lines included.
     expect(withoutTagLine('a\n\nb\n')).toBe('a\n\nb\n');
   });
 
   it('writes the line back in the shape it reads', () => {
-    expect(tagLine(['log', 'work'])).toBe('\n\n#log #work');
+    expect(tagLine(['urgent', 'work'])).toBe('\n\n#urgent #work');
   });
 });

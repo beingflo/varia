@@ -54,7 +54,8 @@ Each phase is shippable on its own. Later phases must not force a change to the 
 - [ ] quick capture: `…/?q=work buy milk` opens the `work` todo list with a new item appended
 - [x] tags: the last line of a body names them (`#work #urgent`, nothing else on the line), derived
       into `note_tag` on every body write on every device, backfilled once for older notes; search
-      has tags/notes sections, a note shows its tags as chips (`design/002`)
+      splits notes from log entries by their first line and lists tags, a note shows its tags as
+      chips (`design/002`)
 - [x] tag stream: `/tag/<name>` lists the notes under a tag newest first, whole bodies, a timestamp
       rail, `⌘J` files an entry tagged with the stream's tag (`design/004`)
 - [ ] export: zip of `*.md`, todo JSON and the raw op log; import that restores an account

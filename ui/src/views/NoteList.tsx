@@ -7,8 +7,11 @@ import { ago } from '../lib/time';
 const TAG_HINT = 4;
 /** A keystroke is cheaper than a query: the list follows once the typing pauses. */
 const DEBOUNCE = 120;
-/** Rows drawn at most: every row is a DOM subtree, and thousands of them cost more than the query. */
+/** Rows drawn at most per section: every row is a DOM subtree, and thousands cost more than the query. */
 const LIMIT = 200;
+/** Nothing loaded yet, or a `#` query that asks for tags only. */
+const EMPTY: SearchPage = { hits: [], total: 0 };
+type Page = { notes: SearchPage; logs: SearchPage };
 
 /** Fullscreen, opaque, keyboard driven: ⌘K opens it, Esc closes it, arrows and Enter pick. */
 export default function NoteList(props: {
@@ -50,19 +53,27 @@ export default function NoteList(props: {
 
   const [page, { refetch }] = createResource(
     () => ({ query: term(), onlyTags: tagMode() }),
-    async ({ query, onlyTags }): Promise<SearchPage> =>
-      onlyTags ? { hits: [], total: 0 } : repo.searchNotes({ q: query, excludeTag: props.excludeTag, limit: LIMIT }),
+    async ({ query, onlyTags }): Promise<Page> => {
+      if (onlyTags) return { notes: EMPTY, logs: EMPTY };
+      const search = (section: 'notes' | 'log') =>
+        repo.searchNotes({ q: query, excludeTag: props.excludeTag, section, limit: LIMIT });
+      const [notes, logs] = await Promise.all([search('notes'), search('log')]);
+      return { notes, logs };
+    },
   );
   // The previous page stays on screen while the next one loads: typing must not blank the list.
-  const [lastPage, setLastPage] = createSignal<SearchPage>();
+  const [lastPage, setLastPage] = createSignal<Page>();
   createEffect(() => {
     const loaded = page();
     if (loaded) setLastPage(loaded);
   });
-  const shown = (): SearchPage => page() ?? lastPage() ?? { hits: [], total: 0 };
-  const noteList = (): SearchHit[] => shown().hits;
-  /** The flat order the cursor walks, which is also the order on screen: notes, then tags. */
-  const rows = (): number => tagNames().length + noteList().length;
+  const shown = (): Page => page() ?? lastPage() ?? { notes: EMPTY, logs: EMPTY };
+  const noteList = (): SearchHit[] => shown().notes.hits;
+  const logList = (): SearchHit[] => shown().logs.hits;
+  /** The flat order the cursor walks, which is also the order on screen: notes, logs, then tags. */
+  const rows = (): number => tagNames().length + noteList().length + logList().length;
+  /** Both note lists empty: nothing matched, rather than one section being empty. */
+  const nothing = (): boolean => !noteList().length && !logList().length;
 
   createEffect(() => {
     query();
@@ -70,9 +81,10 @@ export default function NoteList(props: {
   });
 
   const pick = (index: number) => {
-    const note = noteList()[index];
+    const notes = noteList();
+    const note = notes[index] ?? logList()[index - notes.length];
     if (note) return props.onOpen(note);
-    const tag = tagNames()[index - noteList().length];
+    const tag = tagNames()[index - notes.length - logList().length];
     if (tag) props.onTag?.(tag);
   };
 
@@ -160,16 +172,28 @@ export default function NoteList(props: {
 
       <Show when={page() ?? lastPage()}>
         <Show when={!tagMode()}>
-          <Show when={props.onTag}>
+          <Show when={props.onTag && noteList().length}>
             <h2 class="row-head">notes</h2>
           </Show>
           <ul class="notes">
-            <For each={noteList()} fallback={<li class="muted">{term() ? 'no match' : 'nothing yet'}</li>}>
+            <For each={noteList()} fallback={nothing() ? <li class="muted">{term() ? 'no match' : 'nothing yet'}</li> : null}>
               {(note, index) => noteRow(note, index())}
             </For>
           </ul>
-          <Show when={noteList().length < shown().total}>
-            <p class="muted small">{shown().total - noteList().length} more</p>
+          <Show when={noteList().length < shown().notes.total}>
+            <p class="muted small">{shown().notes.total - noteList().length} more</p>
+          </Show>
+
+          <Show when={logList().length}>
+            <Show when={props.onTag}>
+              <h2 class="row-head">log</h2>
+            </Show>
+            <ul class="notes">
+              <For each={logList()}>{(note, index) => noteRow(note, noteList().length + index())}</For>
+            </ul>
+            <Show when={logList().length < shown().logs.total}>
+              <p class="muted small">{shown().logs.total - logList().length} more</p>
+            </Show>
           </Show>
         </Show>
 
@@ -178,7 +202,7 @@ export default function NoteList(props: {
           <ul class="notes">
             <For each={tagNames()}>
               {(name, index) => (
-                <li class={(tagMode() ? 0 : noteList().length) + index() === cursor() ? 'on' : ''}>
+                <li class={(tagMode() ? 0 : noteList().length + logList().length) + index() === cursor() ? 'on' : ''}>
                   <a
                     href={`${import.meta.env.BASE_URL}tag/${name}`}
                     onClick={(e) => {

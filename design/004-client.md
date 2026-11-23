@@ -88,15 +88,16 @@ tab hidden) saves silently and leaves you writing. Nothing typed, nothing create
 exists, editing it is ordinary note editing — the tag line is in the body then, and keeping it last
 is the writer's business: no editor fence, no normalising on save.
 
-The palette is two sections in that order: notes, then tags. Notes answer the query — every word of
-it as a prefix, all of them required (`design/002`) — and the tags sit below them, since a stream is
-a shortcut, not a result: listed before anything is typed, prefix match, and a leading `#` asks for
-tags only. The cursor walks the same order it shows, and a key pressed while the list still belongs
+The palette is three sections in that order: notes, log entries, tags. The first two are one query
+cut in half — every word of it a prefix, all of them required (`design/002`) — by what the note
+opens with: a markdown heading makes it a note, anything else an entry, and a list is always a note.
+The tags sit below them, since a stream is a shortcut, not a result: listed before anything is typed,
+prefix match, and a leading `#` asks for tags only. The cursor walks the same order it shows, and a key pressed while the list still belongs
 to the previous query settles it instead of acting on rows that no longer answer what was typed.
-At most fifty rows are drawn, with how many more matched under them: the query is milliseconds, and
-a DOM subtree per row is what a palette over five thousand notes cannot afford.
-Nothing on screen is special-cased: an entry written in a stream is a note like any other, found by
-its text or by its tag. A note shows its tags where they are written: the last line is drawn muted
+At most two hundred rows are drawn per section, with how many more matched under them: the query is
+milliseconds, and a DOM subtree per row is what a palette over five thousand notes cannot afford.
+Nothing is tagged to say which section it belongs to: an entry is a note whose text opens without a
+heading, so writing one more line of title moves it. A note shows its tags where they are written: the last line is drawn muted
 in the editor, so the footer reads as a footer. No chip row on the note, in a tile or in the stream
 — the palette is how you get to a stream.
 

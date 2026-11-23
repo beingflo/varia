@@ -9,6 +9,8 @@ export type NoteFilter = {
   excludeTag?: string;
   /** Search terms; only `searchNotes` reads it. */
   q?: string;
+  /** Which of the palette's two lists; only `searchNotes` reads it. */
+  section?: 'notes' | 'log';
   kind?: NoteKind;
   sort?: 'created';
   limit?: number;

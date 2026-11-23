@@ -314,6 +314,21 @@ describe('search', () => {
     expect(repo.searchNotes(db, {}).hits.map((n) => n.id)).toEqual([board]);
   });
 
+  it('splits notes from log entries by their first character', () => {
+    const db = fresh();
+    const titled = repo.createNote(db, 'note');
+    repo.saveBody(db, titled, '# Heading\n\ntext about coalesce');
+    const entry = repo.createNote(db, 'note');
+    repo.saveBody(db, entry, 'a line about coalesce\n\n#work');
+    const list = repo.createNote(db, 'todo', 'coalesce list');
+
+    const ids = (section: 'notes' | 'log') =>
+      repo.searchNotes(db, { q: 'coalesce', section }).hits.map((n) => n.id).sort();
+    // A heading says note, anything else is an entry — and a list is always a note.
+    expect(ids('notes')).toEqual([titled, list].sort());
+    expect(ids('log')).toEqual([entry]);
+  });
+
   it('caps the list but says how many matched', () => {
     const db = fresh();
     for (let i = 0; i < 3; i++) {
@@ -522,8 +537,8 @@ describe('tags are an index over the body', () => {
       device: 'dev-b', id: 'op-meta', kind: 'note_meta', note_id: 'n1', lamport: 1, created: 1,
       payload: { kind: 'note', title: 'pulled', tags: [], deleted: false },
     } as Op);
-    snapshot(db, 'n1', 'pulled entry\n\n#log #work', 2);
-    expect(repo.tagsOf(db, 'n1')).toEqual(['log', 'work']);
+    snapshot(db, 'n1', 'pulled entry\n\n#urgent #work', 2);
+    expect(repo.tagsOf(db, 'n1')).toEqual(['urgent', 'work']);
   });
 
   it('backfills notes that were on disk before tags were indexed', () => {
@@ -540,19 +555,19 @@ describe('tags are an index over the body', () => {
 
   it('filters by tag, by exclusion and by kind, and can sort by creation', () => {
     const db = fresh();
-    const log = repo.createNote(db, 'note');
-    repo.saveBody(db, log, 'journal\n\n#log #work');
+    const pinned = repo.createNote(db, 'note');
+    repo.saveBody(db, pinned, 'pinned entry\n\n#pinned #work');
     const note = repo.createNote(db, 'note');
     repo.saveBody(db, note, 'a real note\n\n#work');
     const list = repo.createNote(db, 'todo');
 
     // Same millisecond for all three: the order is the tiebreak, so compare as a set.
     const work = repo.listNotes(db, { tag: 'work', kind: 'note', sort: 'created' }).map((n) => n.id).sort();
-    expect(work).toEqual([note, log].sort());
-    const withoutLog = repo.listNotes(db, { excludeTag: 'log' }).map((n) => n.id);
-    expect(withoutLog).toContain(note);
-    expect(withoutLog).not.toContain(log);
-    expect(repo.listNotes(db, { tag: 'log', limit: 1 }).map((n) => n.id)).toEqual([log]);
+    expect(work).toEqual([note, pinned].sort());
+    const withoutPinned = repo.listNotes(db, { excludeTag: 'pinned' }).map((n) => n.id);
+    expect(withoutPinned).toContain(note);
+    expect(withoutPinned).not.toContain(pinned);
+    expect(repo.listNotes(db, { tag: 'pinned', limit: 1 }).map((n) => n.id)).toEqual([pinned]);
     expect(repo.listNotes(db, { sort: 'created' }).map((n) => n.id)).toContain(list);
   });
 });

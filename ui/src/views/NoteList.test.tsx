@@ -4,6 +4,13 @@ import { testRepo } from '../db/inProcess';
 import { renderWithRepo } from '../test-utils';
 import NoteList from './NoteList';
 
+/** The order the palette draws: the notes section, then the log section. */
+async function palette(repo: ReturnType<typeof testRepo>) {
+  const notes = await repo.searchNotes({ section: 'notes' });
+  const logs = await repo.searchNotes({ section: 'log' });
+  return [...notes.hits, ...logs.hits];
+}
+
 async function seed() {
   const repo = testRepo();
   const lab = await repo.createNote('note');
@@ -70,7 +77,7 @@ describe('Note list overlay', () => {
     renderWithRepo(() => <NoteList onOpen={onOpen} onClose={() => {}} />, repo);
 
     await screen.findByText('work ~');
-    const listed = await repo.listNotes();
+    const listed = await palette(repo);
     fireEvent.keyDown(window, { key: 'j', ctrlKey: true });
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: listed[1].id })));
@@ -87,7 +94,7 @@ describe('Note list overlay', () => {
     renderWithRepo(() => <NoteList onOpen={onOpen} onClose={() => {}} />, repo);
 
     await screen.findByText('work ~');
-    const listed = await repo.listNotes(); // same order the view got
+    const listed = await palette(repo); // the order the view got
     fireEvent.keyDown(window, { key: 'ArrowDown' });
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: listed[1].id })));
@@ -99,7 +106,7 @@ describe('Note list overlay', () => {
     renderWithRepo(() => <NoteList onOpen={onOpen} onClose={() => {}} />, repo);
 
     await screen.findByText('work ~');
-    const listed = await repo.listNotes();
+    const listed = await palette(repo);
     const rows = document.querySelectorAll('.notes li');
     fireEvent.mouseOver(rows[1]);
     fireEvent.mouseEnter(rows[1]);
@@ -128,10 +135,10 @@ describe('Note list overlay', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('offers tags in their own section, and lists an entry like any other note', async () => {
+  it('splits notes from log entries by their first character, and lists tags below them', async () => {
     const repo = testRepo();
-    const work = await repo.createNote('note');
-    await repo.saveBody(work, 'a real note\n\n#work');
+    const titled = await repo.createNote('note');
+    await repo.saveBody(titled, '# a real note\n\n#work');
     const entry = await repo.createNote('note');
     await repo.saveBody(entry, 'journal line\n\n#work');
     const onTag = vi.fn();
@@ -139,9 +146,9 @@ describe('Note list overlay', () => {
 
     // An empty query already lists the tags: a stream is a place to go, not only a match.
     expect(await screen.findByText('#work')).toBeTruthy();
-    expect(screen.getByText('journal line')).toBeTruthy();
-    expect(screen.getByText('a real note')).toBeTruthy();
-    expect([...document.querySelectorAll('.row-head')].map((h) => h.textContent)).toEqual(['notes', 'tags']);
+    expect(screen.getByText('a real note')).toBeTruthy(); // a heading: the notes section
+    expect(screen.getByText('journal line')).toBeTruthy(); // no heading: the log section
+    expect([...document.querySelectorAll('.row-head')].map((h) => h.textContent)).toEqual(['notes', 'log', 'tags']);
 
     fireEvent.click(screen.getByText('#work'));
     expect(onTag).toHaveBeenCalledWith('work');

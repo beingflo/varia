@@ -413,6 +413,12 @@ function noteWhere(filter: NoteFilter): { clause: string; params: unknown[] } {
   return { clause: where.join(' AND '), params };
 }
 
+/**
+ * The palette's two lists: a note opens with a markdown heading, a log entry does not. A list is
+ * always a note — its title is the row, not the body.
+ */
+const HEADED = `(n.kind = 'todo' OR substr(ltrim(n.body, ' ' || char(9,10,13)), 1, 1) = '#')`;
+
 /** One statement, shared with the debug probe, so the probe times and explains what a search runs. */
 function searchQuery(filter: NoteFilter): { from: string; where: string; params: unknown[]; terms: string[] } {
   const terms = (filter.q ?? '').split(/[^\p{L}\p{N}]+/u).filter(Boolean);
@@ -426,6 +432,7 @@ function searchQuery(filter: NoteFilter): { from: string; where: string; params:
     where.push('NOT EXISTS(SELECT 1 FROM note_tag t WHERE t.note_id = n.id AND t.name = ?)');
     params.push(filter.excludeTag);
   }
+  if (filter.section) where.push(filter.section === 'notes' ? HEADED : `NOT ${HEADED}`);
   return {
     terms,
     params,
@@ -444,7 +451,7 @@ export function searchNotes(db: Db, filter: NoteFilter = {}): SearchPage {
   const { from, where, params } = searchQuery(filter);
   return {
     hits: db.all<SearchHit>(
-      `SELECT n.id, n.kind, n.title, n.updated FROM ${from} WHERE ${where} ORDER BY n.updated DESC${
+      `SELECT n.id, n.kind, n.title, n.updated FROM ${from} WHERE ${where} ORDER BY n.updated DESC, n.id DESC${
         filter.limit ? ' LIMIT ?' : ''
       }`,
       filter.limit ? [...params, filter.limit] : params,
@@ -461,7 +468,7 @@ export function listNotes(db: Db, filter: NoteFilter = {}): NoteSummary[] {
        (SELECT count(*) FROM todo_item i WHERE i.note_id = n.id AND i.deleted = 0 AND i.done = 0) AS open_items,
        (SELECT count(*) FROM todo_item i WHERE i.note_id = n.id AND i.deleted = 0) AS item_count
      FROM note n WHERE ${clause} ${
-       filter.sort === 'created' ? 'ORDER BY n.created DESC, n.id DESC' : 'ORDER BY n.updated DESC'
+       filter.sort === 'created' ? 'ORDER BY n.created DESC, n.id DESC' : 'ORDER BY n.updated DESC, n.id DESC'
      }${filter.limit ? ' LIMIT ?' : ''}`,
     filter.limit ? [...params, filter.limit] : params,
   );
@@ -600,7 +607,7 @@ export function debugRows(db: Db, table: string, offset = 0, limit = 100): Debug
 export function debugSearch(db: Db, filter: NoteFilter = {}): DebugSearch {
   const count = (sql: string) => db.get<{ n: number }>(sql)?.n ?? 0;
   const { from, where, params, terms } = searchQuery(filter);
-  const sql = `SELECT n.id, n.kind, n.title, n.updated FROM ${from} WHERE ${where} ORDER BY n.updated DESC`;
+  const sql = `SELECT n.id, n.kind, n.title, n.updated FROM ${from} WHERE ${where} ORDER BY n.updated DESC, n.id DESC`;
   if (!terms.length) {
     return {
       notes: count('SELECT count(*) AS n FROM note'),
