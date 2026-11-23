@@ -110,6 +110,29 @@ test('saves on blur', async ({ page }) => {
   await expect(page.locator('.notes li', { hasText: 'saved by blur' })).toBeVisible();
 });
 
+test('opens a note above its tag line, so typing cannot eat the tags', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await editor(page).fill('# Lab notes\n\nthe retry loop\n\n#work');
+  await press(page, 's');
+  await press(page, 'e');
+  await expectBody(page, '');
+
+  await openList(page);
+  await page.locator('.notes li').first().click();
+  await expect(page.locator('section.overlay')).toHaveCount(0);
+
+  // The typed text joins the last line of text, and the tags are still the last line of all.
+  await page.keyboard.type(' and more');
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('.cm-line')].map((line) => line.textContent ?? '').filter((text) => text.trim()),
+      ),
+    )
+    .toEqual(['# Lab notes', 'the retry loop and more', '#work']);
+});
+
 test('a click under the text lands the caret at the end', async ({ page }) => {
   await page.goto('/');
   await ready(page);

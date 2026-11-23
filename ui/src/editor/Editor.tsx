@@ -20,6 +20,7 @@ import {
 } from '@codemirror/view';
 import { RangeSetBuilder } from '@codemirror/state';
 import { createEffect, onCleanup, onMount } from 'solid-js';
+import { tagsOfLastLine } from '../db/ops';
 import { linkAt, linksIn } from './links';
 import { minimalSearchPanel, toggleSearch } from './searchPanel';
 
@@ -305,11 +306,25 @@ export default function Editor(props: EditorProps) {
 
   const makeState = (doc: string) => EditorState.create({ doc, extensions: extensions(props) });
 
+  /**
+   * Where a note opens with its caret: after its text, but never after a trailing tag line, where
+   * the first typed word would turn `#work` into `#work hello` and cost the note its tags.
+   */
+  const caretAtOpen = (): number => {
+    const body = view!.state.doc.toString();
+    if (!tagsOfLastLine(body).length) return body.length;
+    const lines = body.split('\n');
+    let at = lines.length - 1;
+    while (at >= 0 && !lines[at].trim()) at--; // the tag line itself
+    at--;
+    while (at >= 0 && !lines[at].trim()) at--; // the blank line that sets it apart
+    return at < 0 ? 0 : lines.slice(0, at + 1).join('\n').length;
+  };
+
   const focus = () => {
     if (!view) return;
     view.focus();
-    const end = view.state.doc.length;
-    view.dispatch({ selection: { anchor: end }, scrollIntoView: false });
+    view.dispatch({ selection: { anchor: caretAtOpen() }, scrollIntoView: false });
   };
 
   const focusEnd = () => {

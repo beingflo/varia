@@ -40,7 +40,7 @@ export default function NoteView(props: {
   // read would return, so the follow-up load must not touch it.
   let ownNote: string | undefined;
 
-  // Caret at the end and the page at the top; the editor itself grows with its content.
+  // Caret at the end (above a tag line) and the page at the top; the editor grows with its content.
   const focusEnd = () => editor?.focusEnd();
 
   const takeFocus = () => {

@@ -161,7 +161,9 @@ The note list marks one with `▦`, and `⌘⇧B` makes one.
   checks or unchecks it — the one place a click edits instead of placing the caret.
   ⌘/Ctrl+F is the editor's own search, not the browser's find: CodeMirror renders
   only the viewport, so the browser's find can neither see nor scroll to text further down a long
-  note. The syntax highlighting is the reading aid: a separate rendered view is not planned. Vim mode is a possible later addition (`PLAN.md`), the reason
+  note. A note opens with its caret above a trailing tag line, never after it: the first word
+  typed there would turn `#work` into `#work hello` and quietly cost the note its tags.
+  The syntax highlighting is the reading aid: a separate rendered view is not planned. Vim mode is a possible later addition (`PLAN.md`), the reason
   CodeMirror was chosen over a hand-rolled editor or a WYSIWYG model.
 - **Pulled versions**: a flush on a clean editor is not an edit. When the text on screen equals the
   last saved text, the flush takes the database's body instead of re-committing the old one, so a
