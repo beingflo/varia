@@ -154,6 +154,51 @@ describe('Note list overlay', () => {
     expect(onTag).toHaveBeenCalledWith('work');
   });
 
+  it('loads the next page from the more button, and starts over on a new query', async () => {
+    const repo = testRepo();
+    for (let i = 0; i < 130; i++) {
+      const id = await repo.createNote('note');
+      await repo.saveBody(id, `# note ${i}\n\ncoalesce`);
+    }
+    renderWithRepo(() => <NoteList onOpen={() => {}} onClose={() => {}} onTag={vi.fn()} />, repo);
+
+    const rows = () => document.querySelectorAll('.notes li').length;
+    await waitFor(() => expect(rows()).toBe(50));
+    // The hint counts everything left, the click loads one page of it.
+    expect(screen.getByText('80 more')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('80 more'));
+    await waitFor(() => expect(rows()).toBe(100));
+    expect(screen.getByText('30 more')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('30 more'));
+    await waitFor(() => expect(rows()).toBe(130));
+    expect(screen.queryByText(/ more$/)).toBeNull();
+
+    // A new query is a new search: it starts from the first page again.
+    fireEvent.input(screen.getByLabelText('search notes'), { target: { value: 'coal' } });
+    await waitFor(() => expect(rows()).toBe(50));
+    expect(screen.getByText('80 more')).toBeTruthy();
+  });
+
+  it('shows ten tags at a time, and all the rest in one click', async () => {
+    const repo = testRepo();
+    for (let i = 0; i < 25; i++) {
+      const id = await repo.createNote('note');
+      await repo.saveBody(id, `# note ${i}\n\n#t${String(i).padStart(2, '0')}`);
+    }
+    renderWithRepo(() => <NoteList onOpen={() => {}} onClose={() => {}} onTag={vi.fn()} />, repo);
+
+    const shown = () =>
+      [...document.querySelectorAll('.notes li .title-text')].filter((el) => el.textContent?.startsWith('#'));
+    await waitFor(() => expect(shown().length).toBe(10));
+    expect(screen.getByText('15 more')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('15 more'));
+    await waitFor(() => expect(shown().length).toBe(25));
+    expect(screen.queryByText(/ more$/)).toBeNull();
+  });
+
   it('answers only with tags once the query starts with #', async () => {
     const repo = testRepo();
     const work = await repo.createNote('note');

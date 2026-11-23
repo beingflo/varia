@@ -94,6 +94,8 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--muted); outline
 input[type='search']::-webkit-search-cancel-button { display: none; }
 
 .notes { list-style: none; margin: 0; padding: 0; }
+/* The "N more" line under a search section: text that loads the next page of it. */
+.more:hover { text-decoration: underline; text-underline-offset: 3px; }
 .notes li a { position: relative; display: flex; align-items: baseline; gap: 0.5rem; padding: 0.12rem 0; line-height: 1.5; text-decoration: none; }
 /* The dot hangs in the gutter, so titles stay aligned with the search field. */
 .notes li a .dot { position: absolute; left: -1.1rem; color: var(--fg); }

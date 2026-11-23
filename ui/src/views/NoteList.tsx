@@ -3,12 +3,12 @@ import { useRepo } from '../db/context';
 import type { SearchHit, SearchPage } from '../db/api';
 import { ago } from '../lib/time';
 
-/** Tags in the palette are a shortcut, not a section; a `#` query asks for them all. */
-const TAG_HINT = 4;
+/** Tags are a shortcut, not a section: ten at a time, and a `#` query asks for tags only. */
+const TAG_HINT = 10;
 /** A keystroke is cheaper than a query: the list follows once the typing pauses. */
 const DEBOUNCE = 120;
 /** Rows drawn at most per section: every row is a DOM subtree, and thousands cost more than the query. */
-const LIMIT = 100;
+const LIMIT = 50;
 /** Nothing loaded yet, or a `#` query that asks for tags only. */
 const EMPTY: SearchPage = { hits: [], total: 0 };
 type Page = { notes: SearchPage; logs: SearchPage };
@@ -28,10 +28,19 @@ export default function NoteList(props: {
   const [q, setQ] = createSignal('');
   const [query, setQuery] = createSignal('');
   const [cursor, setCursor] = createSignal(0);
+  /** Extra rows loaded by the "more" buttons, for the query on screen. */
+  const [more, setMore] = createSignal(0);
+  /** Tags are few next to notes: their hint offers one click to all of them, not a page at a time. */
+  const [allTags, setAllTags] = createSignal(false);
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   const flush = () => {
     clearTimeout(timer);
+    // A new query starts from the first page again; the same query keeps what was loaded.
+    if (q() !== query()) {
+      setMore(0);
+      setAllTags(false);
+    }
     setQuery(q());
   };
   const settle = () => {
@@ -49,14 +58,16 @@ export default function NoteList(props: {
     () => (props.onTag ? term().toLowerCase() : null),
     async (prefix) => (prefix === null ? [] : (await repo.tags()).filter((name) => name.toLowerCase().startsWith(prefix))),
   );
-  const tagNames = (): string[] => (tags() ?? []).slice(0, tagMode() ? undefined : TAG_HINT);
+  const tagNames = (): string[] => (tags() ?? []).slice(0, allTags() ? undefined : TAG_HINT);
+  /** Tags the query matched but the list is not showing yet. */
+  const tagsLeft = (): number => (tags() ?? []).length - tagNames().length;
 
   const [page, { refetch }] = createResource(
-    () => ({ query: term(), onlyTags: tagMode() }),
-    async ({ query, onlyTags }): Promise<Page> => {
+    () => ({ query: term(), onlyTags: tagMode(), limit: LIMIT + more() }),
+    async ({ query, onlyTags, limit }): Promise<Page> => {
       if (onlyTags) return { notes: EMPTY, logs: EMPTY };
       const search = (section: 'notes' | 'log') =>
-        repo.searchNotes({ q: query, excludeTag: props.excludeTag, section, limit: LIMIT });
+        repo.searchNotes({ q: query, excludeTag: props.excludeTag, section, limit });
       const [notes, logs] = await Promise.all([search('notes'), search('log')]);
       return { notes, logs };
     },
@@ -78,6 +89,34 @@ export default function NoteList(props: {
   createEffect(() => {
     query();
     setCursor(0);
+  });
+
+  /** The row under the cursor as a value: a new page shifts the rows below it, an index does not. */
+  const rowAt = (index: number): string | undefined => {
+    const notes = noteList();
+    const logs = logList();
+    return (notes[index] ?? logs[index - notes.length])?.id ?? tagNames()[index - notes.length - logs.length];
+  };
+  const indexOfRow = (row: string): number => {
+    const notes = noteList();
+    const log = logList().findIndex((note) => note.id === row);
+    if (log >= 0) return notes.length + log;
+    const tag = tagNames().indexOf(row);
+    return tag >= 0 ? notes.length + logList().length + tag : -1;
+  };
+
+  // Load more keeps the highlight where it was: the page is appended above the rows below it.
+  let keepOn: string | undefined;
+  const loadMore = () => {
+    keepOn = rowAt(cursor());
+    setMore(more() + LIMIT);
+  };
+  createEffect(() => {
+    page();
+    if (keepOn === undefined) return;
+    const at = indexOfRow(keepOn);
+    keepOn = undefined;
+    setCursor(at >= 0 ? at : Math.min(cursor(), Math.max(0, rows() - 1)));
   });
 
   const pick = (index: number) => {
@@ -181,7 +220,11 @@ export default function NoteList(props: {
             </For>
           </ul>
           <Show when={noteList().length < shown().notes.total}>
-            <p class="muted small">{shown().notes.total - noteList().length} more</p>
+            <p class="muted small">
+              <button type="button" class="more" onMouseDown={(e) => e.preventDefault()} onClick={loadMore}>
+                {shown().notes.total - noteList().length} more
+              </button>
+            </p>
           </Show>
 
           <Show when={logList().length}>
@@ -192,7 +235,11 @@ export default function NoteList(props: {
               <For each={logList()}>{(note, index) => noteRow(note, noteList().length + index())}</For>
             </ul>
             <Show when={logList().length < shown().logs.total}>
-              <p class="muted small">{shown().logs.total - logList().length} more</p>
+              <p class="muted small">
+                <button type="button" class="more" onMouseDown={(e) => e.preventDefault()} onClick={loadMore}>
+                  {shown().logs.total - logList().length} more
+                </button>
+              </p>
             </Show>
           </Show>
         </Show>
@@ -220,6 +267,18 @@ export default function NoteList(props: {
         </Show>
         <Show when={tagMode() && !tagNames().length}>
           <p class="muted small">no tag matches</p>
+        </Show>
+        <Show when={tagsLeft() > 0}>
+          <p class="muted small">
+            <button
+              type="button"
+              class="more"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setAllTags(true)}
+            >
+              {tagsLeft()} more
+            </button>
+          </p>
         </Show>
       </Show>
     </section>
