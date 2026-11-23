@@ -8,6 +8,7 @@ import { tags } from '@lezer/highlight';
 import { languages } from '@codemirror/language-data';
 import { closeSearchPanel, findNext, findPrevious, search } from '@codemirror/search';
 import { EditorState, Prec, type Extension } from '@codemirror/state';
+import type { SyntaxNode } from '@lezer/common';
 import {
   Decoration,
   drawSelection,
@@ -47,6 +48,29 @@ function decorateCodeBlocks(view: EditorView): DecorationSet {
   });
   return builder.finish();
 }
+
+/** Nodes whose text is literal: an arrow there would be a syntax error, not a nicer dash. */
+const CODE_NODES = new Set(['FencedCode', 'CodeBlock', 'InlineCode']);
+
+function insideCode(state: EditorState, pos: number): boolean {
+  for (let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, -1); node; node = node.parent) {
+    if (CODE_NODES.has(node.name)) return true;
+  }
+  return false;
+}
+
+/**
+ * `->` becomes `→` as the `>` is typed. Not in code, and not on paste: prose gets the arrow, an
+ * input that carries a value keeps the characters it was given.
+ */
+const arrows = EditorView.inputHandler.of((view, from, to, text) => {
+  if (text !== '>' || from !== to || view.composing) return false;
+  const { state } = view;
+  const at = from - 1;
+  if (at < state.doc.lineAt(from).from || state.sliceDoc(at, from) !== '-' || insideCode(state, at)) return false;
+  view.dispatch({ changes: { from: at, to, insert: '→' }, userEvent: 'input.type' });
+  return true;
+});
 
 /** The tag line at the end of a body is a footer, not a sentence: grey it so it reads as one. */
 const tagLineMark = Decoration.mark({ class: 'cm-tagline' });
@@ -255,6 +279,7 @@ function extensions(props: EditorProps): Extension[] {
       indentWithTab,
     ]),
     drawSelection(),
+    arrows,
     codeBlockLines,
     tagLines,
     links,

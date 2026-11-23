@@ -133,6 +133,22 @@ test('opens a note above its tag line, so typing cannot eat the tags', async ({ 
     .toEqual(['# Lab notes', 'the retry loop and more', '#work']);
 });
 
+test('draws an arrow for a typed ->, but leaves code alone', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  await page.keyboard.type('the retry loop -> the fix');
+  await expectBody(page, 'the retry loop → the fix');
+
+  // Inside a fence the characters are the point, so the arrow stays a dash and a bracket.
+  await editor(page).fill('```\ncode\n```');
+  await page.locator('.cm-line', { hasText: 'code' }).click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' -> x');
+  await expect
+    .poll(() => page.locator('.cm-line', { hasText: 'code' }).textContent())
+    .toBe('code -> x');
+});
+
 test('a click under the text lands the caret at the end', async ({ page }) => {
   await page.goto('/');
   await ready(page);

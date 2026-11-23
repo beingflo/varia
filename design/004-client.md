@@ -172,7 +172,8 @@ The note list marks one with `▦`, and `⌘⇧B` makes one.
   note that still has focus behind it.
 - **Snapshotting**: typing writes nothing. A snapshot op is committed when the editor loses focus,
   on `⌘S`, before the note list or another note is opened, before history opens, on `⌘D`/`⌘E`/`⌘⇧E`,
-  and on `visibilitychange → hidden`. There is no idle timer: a note that is typed and never blurred,
+  and on `visibilitychange → hidden`. Typing `->` draws `→` (not inside code, and never on paste).
+  There is no idle timer: a note that is typed and never blurred,
   saved or left is not written. If the body equals the current one, no op is written.
 - **Todos**: rows of checkbox + text, an always-present empty row at the bottom for appending,
   "show done" toggle (default off). Checking an item writes one `todo_item` op.
