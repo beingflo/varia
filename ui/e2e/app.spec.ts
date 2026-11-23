@@ -20,13 +20,11 @@ async function openDebug(page: Page) {
 
 const editor = (page: Page) => page.getByLabel('note body');
 
-/** CodeMirror renders lines as blocks: innerText is the document, minus the empty placeholder. */
+/** CodeMirror renders lines as blocks: innerText is the document, minus an empty one's placeholder. */
 const bodyText = (page: Page) =>
   editor(page).evaluate((el) => {
-    // The placeholder is only present while the document is empty; a detached clone would lose
-    // the block layout that turns lines into newlines.
-    if (el.querySelector('.cm-placeholder')) return '';
-    return (el as HTMLElement).innerText;
+    if (el.querySelector('.cm-placeholder')) return ''; // a decoration, not text
+    return (el as HTMLElement).innerText.replace(/\n+$/, '');
   });
 
 /** The editor is a contenteditable, so "value" assertions poll its text instead. */

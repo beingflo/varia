@@ -8,7 +8,7 @@ const TAG_HINT = 4;
 /** A keystroke is cheaper than a query: the list follows once the typing pauses. */
 const DEBOUNCE = 120;
 /** Rows drawn at most per section: every row is a DOM subtree, and thousands cost more than the query. */
-const LIMIT = 200;
+const LIMIT = 100;
 /** Nothing loaded yet, or a `#` query that asks for tags only. */
 const EMPTY: SearchPage = { hits: [], total: 0 };
 type Page = { notes: SearchPage; logs: SearchPage };

@@ -94,7 +94,7 @@ opens with: a markdown heading makes it a note, anything else an entry, and a li
 The tags sit below them, since a stream is a shortcut, not a result: listed before anything is typed,
 prefix match, and a leading `#` asks for tags only. The cursor walks the same order it shows, and a key pressed while the list still belongs
 to the previous query settles it instead of acting on rows that no longer answer what was typed.
-At most two hundred rows are drawn per section, with how many more matched under them: the query is
+At most a hundred rows are drawn per section, with how many more matched under them: the query is
 milliseconds, and a DOM subtree per row is what a palette over five thousand notes cannot afford.
 Nothing is tagged to say which section it belongs to: an entry is a note whose text opens without a
 heading, so writing one more line of title moves it. A note shows its tags where they are written: the last line is drawn muted

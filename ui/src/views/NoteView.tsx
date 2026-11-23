@@ -162,7 +162,7 @@ export default function NoteView(props: {
       <Editor
         docKey={noteId() ?? 'draft'}
         ariaLabel="note body"
-        placeholder={props.embedded ? '' : 'Write something nice'}
+        placeholder={props.embedded ? '' : 'write'}
         autoFocus={props.autoFocus ?? !props.embedded}
         value={body()}
         onInput={(text) => {

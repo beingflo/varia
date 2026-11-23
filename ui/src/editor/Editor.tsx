@@ -265,6 +265,7 @@ export interface EditorProps {
   /** Changes when a different note is opened; undo history starts fresh, the view is reused. */
   docKey: string;
   ariaLabel: string;
+  /** Only the note view names its empty document; a tile or a stream draft stays blank. */
   placeholder?: string;
   /** False in a dashboard tile: several editors must not grab the caret, and none scrolls the page. */
   autoFocus?: boolean;
