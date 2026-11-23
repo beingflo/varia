@@ -116,7 +116,7 @@ export const BINDINGS: { command: Command; label: string; chords: Chord[]; hidde
   },
   {
     command: 'toggle-done',
-    label: 'check or uncheck item',
+    label: 'show or hide done items',
     chords: [
       { key: 'a', mods: ['mod', 'alt'] },
       { key: 'a', mods: ['mod', 'shift'] },
