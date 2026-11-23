@@ -543,6 +543,51 @@ test('continues markdown lists, nests with tab, and steps out one level at a tim
   await expectBody(page, '- one\n  - two\n- three\nplain');
 });
 
+test('checks a markdown task item by clicking its box, wherever the note is scrolled', async ({ page }) => {
+  await page.goto('/');
+  await ready(page);
+  // Long enough that the item is only reachable by scrolling.
+  const lines = Array.from({ length: 200 }, (_, i) => (i === 100 ? '- [ ] buy milk' : `line ${i}`));
+  await editor(page).fill(lines.join('\n'));
+
+  // Scroll until CodeMirror has rendered the item, then centre it so the click lands inside the
+  // window; the box is text, so its rectangle has to be measured from a Range.
+  const box = await page.evaluate(async () => {
+    for (let y = 0; y < document.body.scrollHeight; y += 200) {
+      window.scrollTo(0, y);
+      await new Promise((r) => requestAnimationFrame(r));
+      if ([...document.querySelectorAll('.cm-line')].some((l) => l.textContent?.includes('buy milk'))) break;
+    }
+    const line = [...document.querySelectorAll('.cm-line')].find((l) => l.textContent?.includes('buy milk'))!;
+    const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const at = (node.textContent ?? '').indexOf('[');
+      if (at < 0) continue;
+      const range = document.createRange();
+      range.setStart(node, at);
+      range.setEnd(node, Math.min(at + 3, (node.textContent ?? '').length));
+      const rect = range.getBoundingClientRect();
+      window.scrollBy(0, rect.top - 300);
+      return { x: rect.left + rect.width / 2, y: rect.top - (rect.top - 300) };
+    }
+    return null;
+  });
+  expect(box).not.toBeNull();
+
+  // A click on the box is a draft's first write: the note gets its id here, and the page must not
+  // jump to the top when it does.
+  const before = await page.evaluate(() => Math.round(window.scrollY));
+  await page.mouse.click(box!.x, box!.y);
+  await expect.poll(() => page.evaluate(() => Math.round(window.scrollY))).toBe(before);
+  const text = () => page.evaluate(() => [...document.querySelectorAll('.cm-line')].find((l) => l.textContent?.includes('buy milk'))?.textContent);
+  await expect.poll(text).toBe('- [x] buy milk');
+
+  // And back: the same click unchecks, still without moving the page.
+  await page.mouse.click(box!.x, box!.y);
+  await expect.poll(text).toBe('- [ ] buy milk');
+  expect(await page.evaluate(() => Math.round(window.scrollY))).toBe(before);
+});
+
 test('continues numbered lists and counts up', async ({ page }) => {
   await page.goto('/');
   await ready(page);

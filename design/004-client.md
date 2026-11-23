@@ -154,7 +154,9 @@ The note list marks one with `▦`, and `⌘⇧B` makes one.
   code highlighting all live in the editor; the document is still plain text, so the log, history and
   sync see exactly what a textarea would have written. Links (markdown links, autolinks and bare
   `http(s)` URLs) are underlined and open with ⌘/Ctrl-click, never a plain one: a URL is still text
-  to put a caret in. ⌘/Ctrl+F is the editor's own search, not the browser's find: CodeMirror renders
+  to put a caret in. A task item's `[ ]` is text like everything else, so a plain click on it
+  checks or unchecks it — the one place a click edits instead of placing the caret.
+  ⌘/Ctrl+F is the editor's own search, not the browser's find: CodeMirror renders
   only the viewport, so the browser's find can neither see nor scroll to text further down a long
   note. The syntax highlighting is the reading aid: a separate rendered view is not planned. Vim mode is a possible later addition (`PLAN.md`), the reason
   CodeMirror was chosen over a hand-rolled editor or a WYSIWYG model.

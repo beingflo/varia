@@ -210,6 +210,29 @@ const emptyItemEnter = (view: EditorView): boolean => {
   return true;
 };
 
+/** A task item's box: `- [ ]` or `1. [x]`, and where its character sits on the line. */
+const TASK_ITEM = /^(\s*)(?:[-*+]|\d+[.)])\s+\[([ xX])\]/;
+
+/**
+ * Clicking the box of a task item checks it. The box is text here — there is no rendered widget —
+ * so a click is the only motion that makes it feel like a box. Everywhere else on the line a plain
+ * click still just puts the caret, and ⌘/Ctrl-click keeps meaning "open this link".
+ */
+const toggleBox = (event: MouseEvent, view: EditorView): boolean => {
+  const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+  if (pos === null) return false;
+  const line = view.state.doc.lineAt(pos);
+  const match = TASK_ITEM.exec(line.text);
+  if (!match) return false;
+  const box = line.from + match[0].length - 2;
+  // The brackets themselves count too: a click on `[`, ` ` or `]` is a click on the box.
+  if (pos < box - 1 || pos > box + 1) return false;
+  view.dispatch({ changes: { from: box, to: box + 1, insert: match[2] === ' ' ? 'x' : ' ' } });
+  view.focus();
+  event.preventDefault();
+  return true;
+};
+
 function extensions(props: EditorProps): Extension[] {
   return [
     // Markdown first: Enter continues lists and quotes, Backspace undoes the marker.
@@ -245,7 +268,8 @@ function extensions(props: EditorProps): Extension[] {
       // A plain click must still put the caret inside a URL (URLs are text you edit), so open
       // only with the modifier, like other markdown source editors.
       mousedown: (event, view) => {
-        if (event.button !== 0 || !(event.metaKey || event.ctrlKey)) return false;
+        if (event.button !== 0) return false;
+        if (!event.metaKey && !event.ctrlKey) return toggleBox(event, view);
         const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
         const href = pos === null ? undefined : linkAt(view.state, pos);
         if (!href) return false;
@@ -310,6 +334,9 @@ export default function Editor(props: EditorProps) {
 
     if (key !== currentKey) {
       currentKey = key;
+      // A draft that just got its id is the same note, still on screen: keep the state, the caret
+      // and the scroll. Only a real switch replaces the document and goes back to the top.
+      if (next === doc) return;
       view.setState(makeState(next));
       if (props.autoFocus !== false) focusEnd();
       return;
@@ -326,7 +353,10 @@ export default function Editor(props: EditorProps) {
   // The wrapper fills the viewport while the editor box is only as tall as its text, so a click
   // under the last line would otherwise hit the page and do nothing.
   const clickUnderText = (event: MouseEvent) => {
-    if (!view || (event.target as Element).closest('.cm-editor')) return;
+    // The path is fixed when the event is dispatched. Asking the target instead would be fooled by
+    // a click on a line CodeMirror re-rendered on the way up: that node is detached by now, and a
+    // detached node has no ancestors, so a click in the text would read as a click under it.
+    if (!view || event.composedPath().includes(view.dom)) return;
     event.preventDefault(); // the default action would blur the view we are about to focus
     if (props.autoFocus === false) focus();
     else focusEnd();
