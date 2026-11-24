@@ -37,15 +37,18 @@ Each phase is shippable on its own. Later phases must not force a change to the 
 - [x] landing page at `/landing`, `/` routes by the `varia:entered` flag, `/app` for installed windows
 - [x] sync state dot in the bottom-right corner on every screen
 - [x] eviction recovery: an empty database reads its cursor as 0, so the whole log replays
-- [x] measure cold-start replay and decide whether checkpoints are needed: 1k/5k/20k ops replay in
-      0.17/0.9/2.8 s (sqlite-wasm, real crypto), never blocking the UI. Past the burst it is the
-      service's request bucket that sets the wall clock, not the replay, so `pull_limit` went from
-      500 to 2,000 ops per page: a full 20,000-op replay is now 11 requests instead of 41
 - [ ] Backup mechanism
+- [ ] brainstorm if todo reminders change data format
+- [ ] Add help overlay
+- [ ] Change sync shortcut, add sync settings to separate screen
+- [ ] Double check data format for forward compatibility (note_meta?)
+- [ ] landing copy: rewrite the feature text and settle the section order
+- [ ] export: zip of `*.md`, todo JSON and the raw op log; import that restores an account
+- [ ] quick search: `.../?q=bla` opens varia on the search view with `bla` prefilled and prefiltered
+- [ ] observability in acta
 
 ## Phase 4: Advanced, unordered
 
-- [ ] observability in acta
 - [x] dashboards: a note whose body holds the layout — one JSON line per tile, the last line the tag
       `#dashboard` — opened as a page of editable tiles (the note and list views, `embedded`), sized
       in thirds of the board, ruled in the gaps, saved on every action (`design/002`, `design/004`)
@@ -58,11 +61,8 @@ Each phase is shippable on its own. Later phases must not force a change to the 
       chips (`design/002`)
 - [x] tag stream: `/tag/<name>` lists the notes under a tag newest first, whole bodies, a timestamp
       rail, `⌘J` files an entry tagged with the stream's tag (`design/004`)
-- [ ] export: zip of `*.md`, todo JSON and the raw op log; import that restores an account
 - [ ] token revocation and multiple tokens per account
-- [ ] todo reminders
 - [ ] screen showing deleted notes for recovery
-- [ ] landing copy: rewrite the feature text and settle the section order
 - [ ] drag and drop for list items: pointer-based with the bullet as the handle, `ordering` and `depth`
       in one `todo_item` op, `⌥↑`/`⌥↓` to move and `⌥→`/`⌥←` to nest
 - [ ] `note_chunked` bodies with content-addressed chunks, once measured storage says so (`design/002`)
