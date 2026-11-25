@@ -128,8 +128,8 @@ describe('notes', () => {
       }),
     ).not.toThrow();
     expect(repo.getNote(db, 'never-seen')).toBeUndefined();
-    // The op stays unseen, so a repair retries it once the note exists.
-    expect(db.get('SELECT 1 FROM op_seen WHERE id = ?', ['orphan'])).toBeUndefined();
+    // It stays out of the log, so a repair retries it once the note exists.
+    expect(db.get('SELECT 1 FROM op WHERE id = ?', ['orphan'])).toBeUndefined();
   });
 
   it('chains snapshots by parent', () => {
@@ -365,10 +365,20 @@ describe('op log', () => {
     repo.addItem(source, list, 'two');
 
     const target = fresh('dev-b');
-    for (const op of repo.unpushed(source)) repo.applyRemoteOp(target, op);
+    const log = repo.unpushed(source);
+    for (const op of log) repo.applyRemoteOp(target, op);
 
     expect(repo.listNotes(target).map((n) => n.title)).toEqual(['shared']);
     expect(repo.items(target, list, true).map((i) => i.text)).toEqual(['one', 'two']);
+
+    // The pulled ops are part of the log, marked as the account already holding them: replaying it
+    // into another account is what makes a history follow a device.
+    expect(repo.debugRows(target, 'op').rows.map((row) => [row.id, row.pushed]).sort()).toEqual(
+      log.map((op) => [op.id, 1]).sort(),
+    );
+    expect(repo.unpushed(target)).toEqual([]); // nothing to push back to where it came from
+    for (const op of log) repo.applyRemoteOp(target, op); // a re-pull is a no-op
+    expect(repo.debugRows(target, 'op').total).toBe(log.length);
   });
 });
 
@@ -459,7 +469,7 @@ describe('debug reads', () => {
 
     expect(repo.applyRemotePage(db, [fromTheFuture], 1, 'acct-a')).toBe(0);
     expect(repo.syncCursor(db, 'acct-a')).toBe(1); // the cursor moved past it, sync is not wedged
-    expect(repo.debugRows(db, 'op_seen').total).toBe(0); // unmarked, so a repair can apply it later
+    expect(db.get('SELECT 1 FROM op WHERE id = ?', ['op-future'])).toBeUndefined(); // out of the log, so a repair applies it later
     expect(repo.listNotes(db, {})).toHaveLength(1); // nothing else disturbed
   });
 
@@ -486,7 +496,7 @@ describe('debug reads', () => {
     repo.purge(db);
 
     const counts = Object.fromEntries(repo.debugTables(db).map((t) => [t.name, t.count]));
-    expect(counts).toMatchObject({ note: 0, version: 0, op: 0, op_seen: 0, todo_item: 0 });
+    expect(counts).toMatchObject({ note: 0, version: 0, op: 0, todo_item: 0 });
     // `meta` keeps the device id: the installation survives, its content does not.
     expect(repo.deviceId(db)).toBe('dev-keep');
     expect(repo.syncCursor(db, 'acct-a')).toBe(0);

@@ -122,24 +122,35 @@ export function applyRemoteOps(db: Db, ops: Op[]): number {
   return tx(db, () => ops.reduce((applied, op) => (applyRemoteOp(db, op) ? applied + 1 : applied), 0));
 }
 
-/** Apply an op that came from elsewhere; idempotent by op id. */
+/** Apply an op that came from elsewhere: store it in the log, materialise it, all in one place. */
 export function applyRemoteOp(db: Db, op: Op): boolean {
   // The local clock must pass the remote one, or the next local write loses the tie-break.
   if (op.lamport > Number(meta(db, 'lamport') ?? '0')) setMetaValue(db, 'lamport', String(op.lamport));
-  // A kind from a newer client: skip it, and deliberately not through `op_seen`, so this device
+  // A kind from a newer client: skip it, and deliberately not through the log, so this device
   // applies it once it knows the kind (after an upgrade, or a repair that re-pulls the log).
   if (!KNOWN_KINDS.has(op.kind)) return false;
-  const seen = db.get('SELECT 1 FROM op_seen WHERE id = ?', [op.id]);
-  if (seen) return false;
+  // Already in the log: this device wrote it (a pull that started behind its own writes hands it
+  // back) or an earlier pull stored it.
+  if (db.get('SELECT 1 FROM op WHERE id = ?', [op.id])) return false;
   try {
     applyOp(db, op);
   } catch (err) {
     // shortcut: one op that cannot apply (a snapshot whose note never arrived) must not roll
-    // back the page and pin the cursor; it stays unseen, so a repair retries it once it can
+    // back the page and pin the cursor; it stays out of the log, so a repair retries it once it can
     console.warn('skipped an op that failed to apply', op.kind, op.note_id, err);
     return false;
   }
-  db.run('INSERT INTO op_seen(id) VALUES(?)', [op.id]);
+  // `pushed = 1`: the account this came from already holds it. The log is the account's, so an
+  // account switch (`resetSync`) turns it into an outbox and the history follows the device.
+  db.run('INSERT INTO op(id, device, kind, note_id, payload, lamport, created, pushed) VALUES(?,?,?,?,?,?,?,1)', [
+    op.id,
+    op.device,
+    op.kind,
+    op.note_id,
+    JSON.stringify(op.payload),
+    op.lamport,
+    op.created,
+  ]);
   return true;
 }
 
@@ -553,8 +564,15 @@ export function unpushed(db: Db, limit = 500): Op[] {
   return db
     .all<{ id: string; device: string; kind: OpKind; note_id: string; payload: string; lamport: number; created: number }>(
       // Insert order, not wall clock: a clock stepped backwards between a note's meta and its
-      // snapshot must not push the child before its parent (recipients would skip both).
-      'SELECT * FROM op WHERE pushed = 0 ORDER BY rowid LIMIT ?',
+      // snapshot must not push the child before its parent. Insert order is the pull order plus what
+      // this device appended, so it is already causal; hoisting a note's earliest meta ahead of that
+      // note's other ops keeps a log written by an older client from pushing a child first.
+      `SELECT o.* FROM op o
+         JOIN (SELECT note_id, min(rowid) AS first, min(CASE kind WHEN 'note_meta' THEN rowid END) AS lead
+                 FROM op WHERE pushed = 0 GROUP BY note_id) g ON g.note_id = o.note_id
+         WHERE o.pushed = 0
+         ORDER BY g.first, o.rowid != coalesce(g.lead, -1), o.rowid
+         LIMIT ?`,
       [limit],
     )
     .map((r) => ({ ...r, payload: JSON.parse(r.payload) }));
@@ -564,7 +582,7 @@ export function unpushed(db: Db, limit = 500): Op[] {
 
 /** Whitelisted, read-only: the debug overlay never gets arbitrary SQL. */
 const DEBUG_TABLES = [
-  'note', 'version', 'todo_item', 'todo_item_op', 'tag', 'note_tag', 'op', 'op_seen', 'sync_state', 'meta',
+  'note', 'version', 'todo_item', 'todo_item_op', 'tag', 'note_tag', 'op', 'sync_state', 'meta',
 ] as const;
 
 const DEBUG_ORDER: Record<string, string> = {
@@ -640,69 +658,11 @@ export function syncCursor(db: Db, account: string): number {
  */
 export function resetSync(db: Db): void {
   tx(db, () => {
+    // The log becomes the outbox again: everything it holds — what this device wrote and what it
+    // pulled — is pushed to the next account, so a switch carries the whole history with it.
     db.run('UPDATE op SET pushed = 0');
-    db.run('DELETE FROM op_seen');
     setMetaValue(db, 'cursor', '0');
     setMetaValue(db, 'cursor_account', '');
-    // `sync_account` survives: it says whose history the pulled notes came from, so rejoining
-    // that same account knows the provenance is already up there.
-  });
-}
-
-/**
- * The outbox holds only this device's own ops, so an op for a note that arrived via pull would
- * reach a different account without the meta that created it — and a snapshot without its note
- * would be skipped by every recipient, losing the edit. Before the log is pushed to another
- * account (`enrol`, `signup`), append the provenance the new account needs: the note's current
- * meta, its body when no local snapshot carries it, and the current fields of any item the
- * outbox edits. The fresh lamports make the synthetic ops win on a device that has not seen the
- * note; the ops they beat are exactly the history they replace.
- */
-export function adoptForeignNotes(db: Db, target: string): void {
-  tx(db, () => {
-    if (meta(db, 'sync_account') === target) return; // rejoining: the provenance is already there
-    const touched = new Map<string, { meta: boolean; snapshot: boolean; items: Set<string> }>();
-    for (const row of db.all<{ note_id: string; kind: OpKind; payload: string }>(
-      'SELECT note_id, kind, payload FROM op',
-    )) {
-      const entry = touched.get(row.note_id) ?? { meta: false, snapshot: false, items: new Set<string>() };
-      if (row.kind === 'note_meta') entry.meta = true;
-      if (row.kind === 'note_snapshot') entry.snapshot = true;
-      if (row.kind === 'todo_item') {
-        const change = JSON.parse(row.payload) as { item_id?: string };
-        if (change.item_id) entry.items.add(change.item_id);
-      }
-      touched.set(row.note_id, entry);
-    }
-    for (const [noteId, entry] of touched) {
-      if (entry.meta) continue; // this device created the note: its provenance is in the log
-      const note = db.get<Note>('SELECT * FROM note WHERE id = ?', [noteId]);
-      if (!note) continue;
-      appendOp(db, 'note_meta', noteId, {
-        kind: note.kind,
-        title: note.title,
-        tags: tagsOf(db, noteId),
-        deleted: note.deleted === 1,
-      });
-      // Always, even when the outbox carries snapshots of its own: they precede this meta in
-      // push order, so on a fresh device they are skipped for arriving before the note exists.
-      if (note.kind === 'note' && note.body) {
-        appendOp(db, 'note_snapshot', noteId, {
-          version_id: crypto.randomUUID(),
-          parent_version_id: headVersionId(db, noteId),
-          body: note.body,
-        });
-      }
-      for (const itemId of entry.items) {
-        const item = db.get<Item>('SELECT * FROM todo_item WHERE id = ?', [itemId]);
-        if (!item) continue;
-        appendOp(db, 'todo_item', noteId, {
-          item_id: itemId,
-          note_id: noteId,
-          fields: { text: item.text, done: item.done === 1, deleted: item.deleted === 1, depth: item.depth, ordering: item.ordering },
-        });
-      }
-    }
   });
 }
 
@@ -713,12 +673,11 @@ export function adoptForeignNotes(db: Db, target: string): void {
 export function purge(db: Db): void {
   tx(db, () => {
     // Children before parents: `version`, `todo_item` and `note_tag` reference `note`.
-    for (const table of ['todo_item_op', 'todo_item', 'version', 'note_tag', 'tag', 'op', 'op_seen', 'sync_state', 'note']) {
+    for (const table of ['todo_item_op', 'todo_item', 'version', 'note_tag', 'tag', 'op', 'sync_state', 'note']) {
       db.run(`DELETE FROM ${table}`);
     }
     setMetaValue(db, 'cursor', '0');
     setMetaValue(db, 'cursor_account', '');
-    setMetaValue(db, 'sync_account', '');
   });
 }
 
@@ -743,7 +702,6 @@ export function applyRemotePage(db: Db, ops: Op[], cursor: number, account: stri
     for (const op of ops) if (applyRemoteOp(db, op)) applied += 1;
     setMetaValue(db, 'cursor', String(Math.max(cursor, syncCursor(db, account))));
     setMetaValue(db, 'cursor_account', account);
-    setMetaValue(db, 'sync_account', account);
     return applied;
   });
 }

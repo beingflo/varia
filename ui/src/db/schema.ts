@@ -57,7 +57,8 @@ CREATE TABLE note_tag(
   PRIMARY KEY (note_id, name)
 );
 
--- Append-only log: the source of truth, and the push outbox.
+-- Append-only log: this device's own ops plus everything pulled from the account. The pushed
+-- column is the outbox flag, so an account switch turns the whole log into the outbox again.
 CREATE TABLE op(
   id TEXT PRIMARY KEY,
   device TEXT NOT NULL,
@@ -71,9 +72,7 @@ CREATE TABLE op(
 CREATE INDEX op_note ON op(note_id, lamport, device);
 CREATE INDEX op_unpushed ON op(pushed, created);
 
--- Pulled ops already applied.
-CREATE TABLE op_seen(id TEXT PRIMARY KEY);
-
+-- Pull position, valid only for the account it was pulled under.
 CREATE TABLE sync_state(
   device TEXT PRIMARY KEY,
   server_cursor INTEGER NOT NULL DEFAULT 0,
@@ -96,8 +95,8 @@ const migration4 = `ALTER TABLE note DROP COLUMN acknowledged;`;
  * A database written before ops had ids of their own: `op` and `todo_item_op` were keyed by
  * (device, seq) and `op_seen` followed the wire, which carried the same pair. `migration1` was
  * edited in place back then, and `CREATE TABLE IF NOT EXISTS` leaves such a database in the old
- * shape for ever — every write then fails with "table op has no column named id". Rebuild the
- * three tables; the derived ids are local, and nothing already pushed is pushed again.
+ * shape for ever — every write then fails with "table op has no column named id". Rebuild both
+ * tables; the derived ids are local, and nothing already pushed is pushed again.
  */
 function migration5(db: Db): void {
   const has = (table: string, column: string) =>
@@ -135,11 +134,6 @@ function migration5(db: Db): void {
     DROP TABLE todo_item_op;
     ALTER TABLE todo_item_op_new RENAME TO todo_item_op;
     CREATE INDEX todo_item_op_item ON todo_item_op(item_id, lamport DESC);
-
-    CREATE TABLE op_seen_new(id TEXT PRIMARY KEY);
-    INSERT INTO op_seen_new(id) SELECT device || '-' || seq FROM op_seen;
-    DROP TABLE op_seen;
-    ALTER TABLE op_seen_new RENAME TO op_seen;
   `);
 }
 
@@ -184,8 +178,20 @@ END;
 INSERT INTO note_fts(rowid, doc) SELECT rowid, ${doc('title', 'body', 'id')} FROM note;
 `;
 
+/**
+ * The log now mirrors the account: a pulled op is stored, not only applied. A database written
+ * before that holds its own ops alone, so its pull position is forgotten once and the next sync
+ * re-pulls the whole account log into `op` — which is also what `re-pull the log` does.
+ */
+const migration7 = `
+DROP TABLE IF EXISTS op_seen;
+UPDATE meta SET value = '0' WHERE key = 'cursor';
+UPDATE meta SET value = '' WHERE key = 'cursor_account';
+DELETE FROM meta WHERE key = 'sync_account';
+`;
+
 const migrations: (string | ((db: Db) => void))[] = [
-  migration1, migration2, migration3, migration4, migration5, searchIndex,
+  migration1, migration2, migration3, migration4, migration5, searchIndex, migration7,
 ];
 
 /** Like `migration5`: a database whose version was rewound keeps the index it already has. */

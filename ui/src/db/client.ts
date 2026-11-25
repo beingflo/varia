@@ -54,7 +54,7 @@ export function createClient(worker: Worker, channel = new BroadcastChannel('var
     'deviceId', 'listNotes', 'countNotes', 'searchNotes', 'getNote', 'createNote', 'saveBody', 'importNotes', 'setNoteMeta', 'versions', 'versionPair',
     'heads', 'items', 'addItem', 'toggleItem', 'setItemText', 'setItemDepth', 'removeItem', 'itemHistory',
     'tags', 'tagsOf', 'unpushed', 'markPushed', 'applyRemote', 'syncCursor', 'resetCursor', 'applyRemotePage', 'resetSync',
-    'adoptForeignNotes', 'purge',
+    'purge',
     'debugTables', 'debugRows', 'debugSearch',
   ] as (keyof Handlers)[]) {
     repo[method] = (...args) => call(method, args);

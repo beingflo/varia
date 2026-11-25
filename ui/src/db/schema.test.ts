@@ -11,7 +11,7 @@ function legacyDb(): Db {
   db.exec(`
     DROP TABLE op;
     DROP TABLE todo_item_op;
-    DROP TABLE op_seen;
+    DROP TABLE IF EXISTS op_seen;
     CREATE TABLE op(
       device TEXT NOT NULL, seq INTEGER NOT NULL, kind TEXT NOT NULL, note_id TEXT NOT NULL,
       payload TEXT NOT NULL, lamport INTEGER NOT NULL, created INTEGER NOT NULL,
@@ -49,7 +49,10 @@ describe('client migrations', () => {
       { id: 'dev-a-2', pushed: 1 },
     ]);
     expect(db.all<{ id: string }>('SELECT id FROM todo_item_op')).toEqual([{ id: 'dev-a-1' }]);
-    expect(db.all<{ id: string }>('SELECT id FROM op_seen')).toEqual([{ id: 'dev-b-9' }]);
+    // The applied-marker table is gone: the log itself now says what has been applied, and the
+    // pull position is forgotten once so a sync fills it.
+    expect(db.get("SELECT 1 FROM sqlite_master WHERE name = 'op_seen'")).toBeUndefined();
+    expect(repo.syncCursor(db, 'acct-a')).toBe(0);
     // Pushed stays pushed: the migration must not turn a delivered op back into an outbox entry.
     expect(repo.unpushed(db).map((op) => op.id)).toEqual(['dev-a-1']);
   });

@@ -1,4 +1,4 @@
-// Shared harness for the sync audit suites (guarantees.test.ts, defects.test.ts):
+// Shared harness for the sync audit suites (guarantees.test.ts, scenarios.test.ts):
 // a fake /api/sync that mirrors server/src/app.rs + store.rs as closely as a test double can.
 import { formatRootKey, newRootKey, opKey } from './crypto';
 import type { SyncResponse, Transport, WireOp } from './client';

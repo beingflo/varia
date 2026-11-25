@@ -57,8 +57,6 @@ export interface Handlers {
   resetCursor(account: string): void;
   applyRemotePage(ops: Op[], cursor: number, account: string): number;
   resetSync(): void;
-  /** Append the provenance ops pulled notes need before their history joins another account. */
-  adoptForeignNotes(target: string): void;
   /** Delete every note and its history on this device. */
   purge(): void;
   debugTables(): DebugTable[];

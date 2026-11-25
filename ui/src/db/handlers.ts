@@ -33,7 +33,6 @@ export function createHandlers(db: Db): Handlers {
     resetCursor: (account) => repo.resetCursor(db, account),
     applyRemotePage: (ops, cursor, account) => repo.applyRemotePage(db, ops, cursor, account),
     resetSync: () => repo.resetSync(db),
-    adoptForeignNotes: (target) => repo.adoptForeignNotes(db, target),
     purge: () => repo.purge(db),
     debugTables: () => repo.debugTables(db),
     debugRows: (table, offset, limit) => repo.debugRows(db, table, offset, limit),

@@ -27,25 +27,24 @@ Every op also carries `lamport` and a wall-clock `created` (display only).
   and `checkpoint` (materialised state up to a `server_seq`) for fast bootstrap. Not `note_patch`: a
   stored diff makes every future reader depend on one diff implementation.
 
-A kind a client does not know is skipped, not an error, and deliberately without an `op_seen` row:
-the pull cursor still advances, so an old client keeps syncing, and the op is applied by the same
-device once it has been upgraded or the log is re-pulled (`repair`).
+A kind a client does not know is skipped, not an error, and deliberately not stored in the log: the
+pull cursor still advances, so an old client keeps syncing, and the op is applied by the same device
+once it has been upgraded or the log is re-pulled (`repair`).
 
 `lamport` starts at 1 on a new device and is `max(all lamports seen) + 1` for any local change.
 Ties break on device id. It is the only ordering authority; wall clocks are for labels.
 
 ## Client tables
 
-Log (source of truth, doubles as the push outbox):
+The log: every op this device wrote or pulled (doubles as the push outbox):
 
 ```
-op(id, device, kind, note_id, payload, created, pushed)    -- PK(id)
-op_seen(id)                      -- idempotency on pull
+op(id, device, kind, note_id, payload, lamport, created, pushed)  -- PK(id), pushed = queued
 meta(cursor, cursor_account)      -- pull position, valid only for the account it was pulled under
 sync_state(device, server_cursor, last_sync_at)
 ```
 
-Materialised (cheap to rebuild by replaying `op`):
+Materialised (rebuilt by replaying this device's log plus the account's):
 
 ```
 note(id, kind, title, body, created, updated, deleted, lamport, device)
@@ -55,15 +54,24 @@ todo_item_op(id, item_id, note_id, fields, lamport, device, created)  -- per-ite
 tag(name), note_tag(note_id, name)
 ```
 
-Every local change writes the op and updates the materialised rows in one transaction. Nothing in
-the materialised tables is authoritative: it can be dropped and rebuilt.
+`op` is the account's log as this device knows it: a local change appends to it, a pulled op is
+stored in it too (`pushed = 1`, since the account already holds it) in the same transaction that
+applies it. There is no separate "applied" marker — an op that is in the log has been applied, and
+one that could not be applied is deliberately left out so a repair retries it. The log is what lets
+an account switch carry the *history* to a new account: `resetSync` sets `pushed = 0` for all of it
+and the next sync pushes the whole log (`003-sync.md`).
+
+Every change therefore writes the op and updates the materialised rows in one transaction. Nothing
+in the materialised tables is authoritative: it can be dropped and rebuilt from the log.
 
 **Migrations are append-only steps, and `migration1` is frozen.** It was edited in place once (ops
 keyed by `(device, seq)` became ops keyed by `id`), which left every database created before that
 change in the old shape: `CREATE TABLE IF NOT EXISTS` has nothing to do, so writes failed with
 `table op has no column named id` for ever, and purging did not help because a purge deletes rows,
-not tables. `migration5` repairs those databases by rebuilding `op`, `todo_item_op` and `op_seen`
-with the derived ids `device-seq`, keeping the `pushed` flags. Real changes to a shipped shape go in
+not tables. `migration5` repairs those databases by rebuilding `op` and `todo_item_op` with the
+derived ids `device-seq`, keeping the `pushed` flags. `migration7` dropped `op_seen` — the log
+itself now says what has been applied — and forgot the pull position once, so a sync fills the log
+of a database that stored only its own ops. Real changes to a shipped shape go in
 a new step — step functions may inspect `PRAGMA table_info`, and `migrate` runs them inside the same
 transaction it bumps `user_version` in.
 

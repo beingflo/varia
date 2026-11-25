@@ -110,18 +110,22 @@ account. `⌘⇧S` opens the sync overlay: paste a code, or press Enter on the e
 account and see the code for the first time.
 
 Unlinking is the one way out: it drops the token and the derived key from the device and rewinds the
-outbox, so the same local history can be pushed to a different account. The notes are never touched.
+outbox — the whole stored log, pulled ops included — so the same local history can be pushed to a
+different account. The notes are never touched.
 The old account's log stays on the server, unreadable without a key that device no longer holds.
 
 ## Implementation notes
 
-- **The outbox is the op log itself.** `op.pushed` is the queue flag, so a push never copies ops
-  anywhere; `markPushed` runs only after the server answered, and only for the prefix it says it
-  holds (`accepted`). A failed push leaves everything pending, and duplicates on the server make
-  the retry harmless.
+- **The outbox is the op log itself.** `op.pushed` is the queue flag, on the ops this device wrote
+  *and* on the ones it pulled (stored with `pushed = 1`), so a push never copies ops anywhere and a
+  rewind makes the whole log an outbox. `markPushed` runs only after the server answered, and only
+  for the prefix it says it holds (`accepted`). A failed push leaves everything pending, and
+  duplicates on the server make the retry harmless.
 - **The outbox is pushed in insert order, not wall-clock order.** A clock stepped backwards between
   a note's meta and its snapshot must not push the child before its parent, or every recipient
-  would skip both.
+  would skip both. Insert order is the pull order plus what this device appended, so it is already
+  causal; a note's earliest meta is still ordered ahead of that note's other ops, which costs one
+  index lookup and keeps a log written by an older client from pushing a child first.
 - **An op that cannot be opened — or cannot be applied — is skipped, not retried.** A wrong key, a
   damaged payload or a snapshot whose note never arrived would otherwise pin the cursor forever;
   `syncNow` counts the unopenable ones in `skipped`, and an unapplicable one stays unseen so a
@@ -160,8 +164,9 @@ was such a disagreement. Three rules remove the class instead of patching instan
   writing while offline — gets the ops in between in the same response, or its new cursor would sit
   above ops it never received. That was a real loss: a child version arrived without its parent.
 - **Repair is explicit.** `re-pull the log` in the sync panel forgets the cursor for the account and
-  keeps every op and its pushed flag; the next sync re-applies the whole log, which is idempotent
-  (`op_seen`, `INSERT OR IGNORE`). The way out of a database that sat above a hole.
+  keeps every op and its pushed flag; the next sync walks the whole log again, storing what it does
+  not have and re-applying only what an earlier attempt could not. The way out of a database that
+  sat above a hole.
 
 A content hash would only add detection of *reordering* by an operator who can already serve garbage;
 ordering does not affect the result, because conflicts are decided by lamport stamps inside the ops.
@@ -172,17 +177,16 @@ So the cheap structural rules win: nothing to hash, no full re-pull on the norma
 ## Two histories, one account
 
 Linking a device that already has notes is a merge, not an upload: enrolment rewinds the outbox
-(`pushed = 0`, cursor `0`) and clears the pull dedupe, so the whole local log goes up and the whole
-account log comes down. Both devices end with the union, ordered by `(lamport, device)`.
+(`pushed = 0`, cursor `0`), so the whole log this device holds goes up and the whole account log
+comes down, and both sides end up with one log. Both devices end with the union, ordered by `(lamport, device)`.
 
 Before the first push, enrolment asks the account for one page and checks the key against a few
 ops: a wrong key would encrypt this device's history into ciphertext nobody can open, and the
-op-id dedupe would keep the garbage forever, so the join is refused instead. Enrolment and signup
-also adopt the provenance of pulled notes the outbox edits — their current meta and body — since
-the outbox holds only this device's own ops and an edit without its note would be skipped by every
-recipient. Account switches (link, unlink, re-pull) wait for a sync already in flight, and every
-trigger re-reads the keystore, so a switch in one tab is picked up by the others and nothing marks
-ops pushed for an account that was just left behind.
+op-id dedupe would keep the garbage forever, so the join is refused instead. The rewind pushes the
+whole log, not just what this device wrote, so a library that came down from another account leaves
+with its version history intact. Account switches (link, unlink, re-pull) wait for a sync already
+in flight, and every trigger re-reads the keystore, so a switch in one tab is picked up by the
+others and nothing marks ops pushed for an account that was just left behind.
 
 - **Distinct notes never conflict.** Note ids are random and minted per device, so two independent
   histories touch disjoint notes. Nothing is overwritten; the account holds both.

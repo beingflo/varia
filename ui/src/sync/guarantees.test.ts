@@ -51,7 +51,7 @@ describe('guarantees', () => {
     expect(await repoB.versions(id)).toHaveLength(1);
   });
 
-  it('switching accounts: the old cursor and the old log never leak into the new account', async () => {
+  it('switching accounts: the old cursor never leaks, and the old log follows as history', async () => {
     const server = auditServer();
     const x = await freshAccount('t-x');
     const y = await freshAccount('t-y');
@@ -79,14 +79,40 @@ describe('guarantees', () => {
     await engineB.unlink();
     await engineB.enrol(y.token, y.keyText);
     expect(await repoB.getNote(idY)).toBeDefined();
-    // Y's log is D's 2 ops plus B's 2 re-pushed own ops: the old cursor was ignored.
-    expect(await repoB.syncCursor(await accountTag(y.token))).toBe(4);
+    // Y's log is D's 2 ops plus B's whole log: its own 2 and the 2 it had pulled from X. The log
+    // moved with the device, so the old cursor applied nowhere.
+    expect(await repoB.syncCursor(await accountTag(y.token))).toBe(6);
     expect(await repoB.syncCursor(await accountTag(x.token))).toBe(0); // X's cursor cannot leak back
 
-    // Y's log: D's ops plus B's own ops — and nothing authored on X's log by A.
+    // A's ops themselves follow the device: same ids, same authors, so Y holds X's version history
+    // rather than a synthesised copy of its current state.
     const yLog = server.logOf(y.token).stored;
-    expect(yLog.filter((op) => op.note_id === idX)).toHaveLength(0);
+    expect(yLog.filter((op) => op.note_id === idX).map((op) => op.id)).toEqual(
+      server.logOf(x.token).stored.filter((op) => op.note_id === idX).map((op) => op.id),
+    );
     expect(yLog.filter((op) => op.note_id === idB).length).toBe(2);
+  });
+
+  it('a server that lost the account log gets the whole history pushed back', async () => {
+    // The device is the only copy after a recreated volume: the cursor is ahead of the head, so
+    // the device rewinds and re-pushes instead of sitting on a log nobody else can see.
+    const account = await freshAccount('t');
+    const repo = testRepo('a');
+    const id = await repo.createNote('note');
+    await repo.saveBody(id, 'the device holds the only copy now');
+    await syncNow({ repo, key: account.key, token: account.token, transport: auditServer().transport });
+    expect((await repo.unpushed()).length).toBe(0);
+
+    const wiped = auditServer();
+    const result = await syncNow({ repo, key: account.key, token: account.token, transport: wiped.transport });
+    expect(result.rewound).toBe(true);
+    expect(wiped.logOf(account.token).stored.length).toBe(2);
+    expect((await repo.unpushed()).length).toBe(0);
+
+    // And an empty device gets the whole history back.
+    const repoB = testRepo('b');
+    await syncNow({ repo: repoB, key: account.key, token: account.token, transport: wiped.transport });
+    expect((await repoB.getNote(id))?.body).toBe('the device holds the only copy now');
   });
 
   it('a wrong key is rejected at enrolment, before anything is pushed', async () => {
@@ -335,6 +361,90 @@ describe('guarantees', () => {
     expect(server.logOf(x.token).stored.length).toBe(1201); // 1200 snapshots plus the meta op
   });
 
+  it('a library that came down from the old account goes up to the new one whole', async () => {
+    // Everything on this device arrived via pull, so its own log is empty and the outbox has
+    // nothing to send. The account switch still has to upload what the device holds — notes,
+    // bodies and items — or the new account stays empty and every new device sees nothing.
+    const server = auditServer();
+    const x = await freshAccount('t-x');
+    const repoA = testRepo('a');
+    const engineA = createEngine({ repo: repoA, store: memoryStore(), transport: server.transport });
+    await engineA.enrol(x.token, x.keyText);
+    const note = await repoA.createNote('note');
+    await repoA.saveBody(note, 'first draft');
+    await repoA.saveBody(note, 'only the old account has this');
+    const list = await repoA.createNote('todo');
+    await repoA.addItem(list, 'buy milk');
+    await repoA.addItem(list, 'call mum');
+    await engineA.run('manual');
+    expect((await repoA.unpushed()).length).toBe(0);
+
+    const repoB = testRepo('b');
+    const engineB = createEngine({ repo: repoB, store: memoryStore(), transport: server.transport });
+    await engineB.enrol(x.token, x.keyText); // pulled, nothing authored here
+    expect((await repoB.unpushed()).length).toBe(0);
+
+    await engineB.unlink();
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ token: 't-y' }), { status: 200 }));
+    const created = await engineB.signup();
+    await engineB.run('manual');
+    expect((await repoB.unpushed()).length).toBe(0);
+
+    // A fresh device of the new account gets every note, body and item.
+    const repoC = testRepo('c');
+    const pulled = await syncNow({
+      repo: repoC,
+      key: await opKey(parseRootKey(created.key)),
+      token: created.token,
+      transport: server.transport,
+    });
+    expect(pulled.skipped).toBe(0);
+    expect((await repoC.getNote(note))?.body).toBe('only the old account has this');
+    expect((await repoC.items(list)).map((item) => item.text).sort()).toEqual(['buy milk', 'call mum']);
+    // The log itself moved, so the version history came with it — not just the current body.
+    expect((await repoC.versions(note)).map((version) => version.id)).toEqual(
+      (await repoA.versions(note)).map((version) => version.id),
+    );
+    expect(await repoC.versions(note)).toHaveLength(2);
+  });
+
+  it('the meta of a pulled note travels before the ops this device added to it', async () => {
+    // This device's own op for a note it pulled has no meta to precede it. Pushed in insert order,
+    // a fresh device meets the child first and can never apply it: the meta must travel first.
+    const server = auditServer();
+    const x = await freshAccount('t-x');
+    const repoA = testRepo('a');
+    const engineA = createEngine({ repo: repoA, store: memoryStore(), transport: server.transport });
+    await engineA.enrol(x.token, x.keyText);
+    const list = await repoA.createNote('todo');
+    await repoA.addItem(list, 'buy milk');
+    await repoA.addItem(list, 'call mum');
+    await engineA.run('manual');
+
+    const repoB = testRepo('b');
+    const engineB = createEngine({ repo: repoB, store: memoryStore(), transport: server.transport });
+    await engineB.enrol(x.token, x.keyText);
+    const milk = (await repoB.items(list))[0];
+    await repoB.setItemText(milk.id, 'buy oat milk'); // the only op this device authored
+    await engineB.unlink();
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ token: 't-y' }), { status: 200 }));
+    const created = await engineB.signup();
+    await engineB.run('manual');
+
+    const sent = server.logOf(created.token).stored.filter((op) => op.note_id === list);
+    expect(sent[0]?.kind).toBe('note_meta'); // the note before anything that names it
+
+    const repoC = testRepo('c');
+    const pulled = await syncNow({
+      repo: repoC,
+      key: await opKey(parseRootKey(created.key)),
+      token: created.token,
+      transport: server.transport,
+    });
+    expect(pulled.skipped).toBe(0);
+    expect((await repoC.items(list)).map((item) => item.text).sort()).toEqual(['buy oat milk', 'call mum']);
+  });
+
   it('switching accounts carries edits of pulled notes: the new account materialises them whole', async () => {
     const server = auditServer();
     const x = await freshAccount('t-x');
@@ -350,7 +460,7 @@ describe('guarantees', () => {
     await engineB.enrol(x.token, x.keyText);
     await repoB.saveBody(id, "B edits A's note");
 
-    // B switches accounts: enrolment adopts the note's provenance for the new account.
+    // B switches accounts: the log it holds — A's ops included — is pushed to the new one.
     await engineB.unlink();
     await engineB.enrol(y.token, y.keyText);
 

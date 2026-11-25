@@ -149,11 +149,9 @@ export function createEngine(options: {
     if (!response.ok) throw new Error(`signup failed: ${response.status}`);
     const { token } = (await response.json()) as { token: string };
     const root = newRootKey();
-    // A device with a past account (a lost keystore) must carry its whole history over: the same
-    // rewind and adoption a join does.
+    // A device that already holds notes carries its whole log over: the same rewind a join does.
     await idle();
     await repo.resetSync();
-    await repo.adoptForeignNotes(await accountTag(token));
     await remember({ token, key: await opKey(root) });
     await run('after signup');
     return { token, key: formatRootKey(root) };
@@ -191,10 +189,9 @@ export function createEngine(options: {
         throw new Error('this key does not decrypt this account — check the key and try again');
       }
     }
-    // Not enrolled but holding ops marked pushed, or a cursor from some other bucket: a lost
-    // keystore. Rewind so this device's history joins the account instead of being silently skipped.
+    // The local log is a merge candidate, not just an outbox: rewind it so everything this device
+    // holds is pushed to the account and the account's whole log is pulled into it.
     await repo.resetSync();
-    await repo.adoptForeignNotes(await accountTag(candidate.token));
     await remember(candidate);
     await run('after enrolment');
   }
