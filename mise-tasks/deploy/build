@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
-#MISE description="Build the container image locally (no shipping or restart)"
+#MISE description="Build the container image in the build machine (no shipping or restart)"
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$root"
 # shellcheck source=/dev/null
 source "$root/mise-tasks/lib/env.sh"
+# shellcheck source=/dev/null
+source "$root/mise-tasks/lib/buildvm.sh"
 load_deploy_env
 
-command -v podman >/dev/null || die "podman not found"
-podman info >/dev/null 2>&1 || die "podman machine is not running"
+buildvm_up
+trap buildvm_stop EXIT
 
 tag="$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
 note "building localhost/varia:${tag}"
-podman build -t "localhost/varia:${tag}" .
-note "built localhost/varia:${tag}"
+build_image "localhost/varia:${tag}"
+note "built localhost/varia:${tag} in machine '${BUILDVM}'"

@@ -1,3 +1,19 @@
+# Toolchain for `mise run dev`, `mise run test` and friends. The tasks
+# themselves stay in mise-tasks/.
+
 [tools]
-node = "23"
-rust = "latest"
+node = "23"     # same major as the Containerfile's ui-builder (node:23-bookworm)
+rust = "latest" # the Containerfile builds with rust:bookworm, i.e. current stable
+
+# The smolvm machine for this repo (see Smolfile). smolvm reads the name from
+# this variable whenever --name is left out.
+[env]
+SMOLVM_MACHINE_NAME = "varia"
+
+# Set by mise while your shell is inside this repo, removed when you leave.
+#   m dev    runs `mise run dev` in the machine
+#   vpi      runs Pi in the machine
+# Plain `mise run ...` still runs on the Mac, which is where deploy belongs.
+[shell_alias]
+m = "smolvm machine exec -it -w /workspace -- mise run"
+vpi = "smolvm machine exec -it -w /workspace -- pi"

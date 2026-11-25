@@ -6,6 +6,8 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$root"
 # shellcheck source=/dev/null
 source "$root/mise-tasks/lib/env.sh"
+# shellcheck source=/dev/null
+source "$root/mise-tasks/lib/buildvm.sh"
 load_deploy_env
 
 host="${VARIA_HOST:-}"
@@ -21,17 +23,21 @@ if ssh "$host" "curl -sf --max-time 2 -o /dev/null http://127.0.0.1:${port}/heal
     die "127.0.0.1:${port} on ${host} is already serving something else; set VARIA_PORT in .deploy.env"
 fi
 
-command -v podman >/dev/null || die "podman not found"
-podman info >/dev/null 2>&1 || die "podman machine is not running"
+# The build runs in its own machine (Smolfile.build); everything that talks to
+# the server stays here, so no SSH key or agent ever enters a machine.
+buildvm_up
+trap buildvm_stop EXIT
 
 tag="$(date +%Y%m%d-%H%M%S)-$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
 image="localhost/varia:${tag}"
 
 note "building ${image}"
-podman build -t "$image" .
+build_image "$image"
 
 note "shipping ${image} to ${host}"
-podman save "$image" | zstd -q -T0 | ssh "$host" 'zstd -q -d | podman load'
+in_buildvm podman save "$image" | zstd -q -T0 | ssh "$host" 'zstd -q -d | podman load'
+# Keep one tag so the layers stay cached, without a tag piling up per deploy.
+in_buildvm sh -c "podman tag '$image' localhost/varia:previous && podman rmi '$image'" >/dev/null
 ssh "$host" "podman tag ${image} localhost/varia:current"
 
 note "installing varia.container (${tag}, port ${port})"

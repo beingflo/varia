@@ -1,0 +1,62 @@
+# The machine `m` and `vpi` run in (see mise.toml). Agents, dependencies and dev
+# servers execute here; the Mac keeps the editor, jj and the deploy.
+#
+#   mise run vm:up      create if needed, start, install tools and dependencies
+#   mise run vm:down    save Pi's sessions to the Mac, then delete the machine
+#
+# Read when the machine is created: after editing, `mise run vm:down` and
+# `mise run vm:up`.
+
+image = "debian:bookworm-slim"
+cpus = 4
+memory = 6144 # MiB ceiling; taken on demand and handed back
+
+workdir = "/workspace"
+
+# The repo root is read-only, so nothing in here can change what later runs on
+# the Mac: .git, .jj, mise.toml, mise-tasks/. Only the source directories are
+# writable. Dependency and build output stay on the machine's own disk, which is
+# both faster and keeps Linux binaries off the Mac.
+volumes = [
+  ".:/workspace:ro",
+  "./ui:/workspace/ui",
+  "./server:/workspace/server",
+  "/workspace/ui/node_modules",
+  "/workspace/server/target",
+]
+
+# Every port a process in the machine listens on appears at the same port on
+# the Mac's loopback while it listens (Vite on 5173, the service on 8099).
+# Stricter: delete this line, use `ports = ["5173:5173"]`, and make Vite listen
+# on 0.0.0.0, which published ports require.
+auto_ports = true
+
+env = [
+  # mise's shims, so `pi` and the project tools resolve without a login shell.
+  "PATH=/root/.local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+  "MISE_TRUSTED_CONFIG_PATHS=/workspace",
+  # service:dev defaults to a file in the repo root, which is read-only here.
+  "VARIA_DB=/var/lib/varia/dev.sqlite",
+]
+
+# Once, as root, on the machine's first start.
+init = [
+  "apt-get update -qq && apt-get install -yqq --no-install-recommends git curl ca-certificates build-essential pkg-config unzip xz-utils zstd ripgrep >/dev/null",
+  # The repo belongs to the Mac user; git refuses it as root without this.
+  "git config --system --add safe.directory '*'",
+  "curl -fsSL https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh",
+  "mise use --global pi@latest",
+  "mkdir -p /var/lib/varia /root/.pi/agent",
+]
+
+[network]
+# Public internet only: the LAN, Tailscale and the Mac's own ports are closed.
+block_private = true
+
+# Pi's key stays on the Mac. The machine sees a placeholder in this variable;
+# the real value is put in on the host, only for requests to this API host.
+# vm:up reads it from 1Password before starting the machine.
+[[network.credentials]]
+name = "deepseek"
+environment_variable = "DEEPSEEK_API_KEY"
+allowed_hosts = ["api.deepseek.com"]

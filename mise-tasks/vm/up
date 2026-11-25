@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+#MISE description="Create (if needed) and start the smolvm machine, then install tools and dependencies in it"
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$root"
+# shellcheck source=mise-tasks/lib/env.sh
+source mise-tasks/lib/env.sh
+
+name="${SMOLVM_MACHINE_NAME:-varia}"
+# 1Password reference for the key Pi uses. The variable name must match the
+# credential binding in the Smolfile and what your Pi model config reads.
+key_ref="${VARIA_PI_KEY_REF:-"op://Personal/Deepseek API Key/key"}"
+sessions="${XDG_STATE_HOME:-$HOME/.local/state}/smolvm/$name/pi-sessions"
+
+command -v smolvm >/dev/null || die "smolvm is not installed (brew install smol-machines/tap/smolvm)"
+
+in_vm() { smolvm machine exec --name "$name" -w /workspace -- "$@"; }
+
+if in_vm true >/dev/null 2>&1; then
+    note "machine '$name' is already running"
+else
+    # The credential binding takes its value from this shell when the machine starts.
+    if [[ -z "${DEEPSEEK_API_KEY:-}" ]]; then
+        if command -v op >/dev/null && key="$(op read "$key_ref" 2>/dev/null)"; then
+            export DEEPSEEK_API_KEY="$key"
+        else
+            note "no key from 1Password ($key_ref): Pi's requests will fail until one is set"
+        fi
+    fi
+
+    # The mount points have to exist before the machine binds its own disk there.
+    mkdir -p ui/node_modules server/target
+
+    created=0
+    if ! smolvm machine start --name "$name" 2>/dev/null; then
+        note "creating machine '$name' from the Smolfile (the first start installs packages)"
+        smolvm machine create --name "$name" -s Smolfile
+        smolvm machine start --name "$name"
+        created=1
+    fi
+
+    if [[ "$created" == 1 ]]; then
+        # Pi's model setup. Skipped when the file holds a key itself: the point
+        # of the credential binding is that the key never enters the machine.
+        models="$HOME/.pi/agent/models.json"
+        if [[ -f "$models" ]]; then
+            if grep -qE '"apiKey"[[:space:]]*:[[:space:]]*"(sk-|[A-Za-z0-9_-]{32,})' "$models"; then
+                note "not copying $models: it seems to contain a key"
+            else
+                smolvm machine cp "$models" "$name:/root/.pi/agent/models.json"
+            fi
+        fi
+        # Sessions saved by the last `vm:down`.
+        if [[ -d "$sessions" ]]; then
+            note "restoring Pi sessions"
+            tar -C "$(dirname "$sessions")" -cf - pi-sessions |
+                smolvm machine exec --name "$name" -i -- \
+                    sh -c 'mkdir -p /root/.pi/agent && tar -C /root/.pi/agent -xf - && rm -rf /root/.pi/agent/sessions && mv /root/.pi/agent/pi-sessions /root/.pi/agent/sessions'
+        fi
+    fi
+fi
+
+note "installing the toolchain from mise.toml"
+in_vm mise install --yes
+if ! in_vm test -d ui/node_modules/.bin; then
+    note "installing ui dependencies"
+    in_vm sh -c 'cd ui && npm ci'
+fi
+
+note "ready: 'm dev' runs the dev servers, 'vpi' runs Pi"

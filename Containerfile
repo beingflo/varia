@@ -3,13 +3,10 @@ FROM node:23-bookworm AS ui-builder
 WORKDIR /usr/src/varia/ui
 
 COPY ui/package.json ui/package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    --mount=type=cache,target=/usr/src/varia/ui/node_modules \
-    npm ci
+RUN npm ci
 
 COPY ./ui/ ./
-RUN --mount=type=cache,target=/usr/src/varia/ui/node_modules \
-    npm run build
+RUN npm run build
 
 # --- backend ----------------------------------------------------------------
 FROM rust:bookworm AS builder
@@ -17,11 +14,10 @@ WORKDIR /usr/src/varia/server
 
 COPY server/Cargo.toml server/Cargo.lock ./
 # Prime the dependency layer with a throwaway binary, so a source-only change does
-# not rebuild sqlite, axum and friends.
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,target=/usr/src/varia/server/target \
-    mkdir -p src && echo 'fn main() {}' > src/main.rs \
+# not rebuild sqlite, axum and friends. The compiled dependencies stay in this
+# layer's target/: there are no cache mounts, because a cache mount is writable
+# by every build step and outlives the build, while a layer is fixed once built.
+RUN mkdir -p src && echo 'fn main() {}' > src/main.rs \
     && cargo build --release \
     && rm -rf src
 
@@ -30,10 +26,7 @@ COPY server/src ./src
 # than the fingerprints the priming build recorded, so cargo would treat the
 # package as fresh and leave the throwaway binary in place. The size check fails
 # the build loudly if that ever happens again.
-RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,target=/usr/src/varia/server/target \
-    find src -exec touch {} + \
+RUN find src -exec touch {} + \
     && cargo build --release \
     && cp target/release/varia /tmp/varia \
     && test "$(stat -c %s /tmp/varia)" -gt 1000000

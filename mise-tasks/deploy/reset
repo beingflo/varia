@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+#MISE description="Delete the build machine and its layer cache (the next deploy builds from scratch)"
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$root"
+# shellcheck source=/dev/null
+source "$root/mise-tasks/lib/env.sh"
+# shellcheck source=/dev/null
+source "$root/mise-tasks/lib/buildvm.sh"
+
+command -v smolvm >/dev/null || die "smolvm is not installed"
+note "deleting build machine '${BUILDVM}'"
+smolvm machine delete --name "$BUILDVM" -f

@@ -1,0 +1,25 @@
+# The machine `mise run deploy` builds the image in. It sees the repo read-only
+# and nothing else: no writable folders, no keys, no SSH agent, no ports. The
+# deploy task on the Mac streams the finished image out and does the SSH part.
+#
+# Created on the first deploy. `mise run deploy:reset` deletes it, cache and
+# all; the next deploy starts clean.
+
+image = "quay.io/podman/stable"
+cpus = 4
+memory = 6144 # MiB ceiling; taken on demand and handed back
+net = true
+
+workdir = "/src"
+
+volumes = [
+  ".:/src:ro",
+  # podman's image and layer store, on the machine's own disk. This is the
+  # build cache, and the only thing a deploy leaves behind.
+  "/var/lib/containers",
+]
+
+[network]
+# Registries only need the public internet: the LAN, Tailscale and the Mac's
+# own ports are closed.
+block_private = true
