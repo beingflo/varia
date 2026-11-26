@@ -3,6 +3,7 @@
 #
 #   buildvm_up      create (if needed) and start the build machine
 #   in_buildvm      run a command in it, in /src (the repo, read-only)
+#   in_buildvm_stream  the same, streaming output: for a build log or an image tar
 #   buildvm_stop    stop it; its disk, and so the layer cache, is kept
 #
 # The name is always passed explicitly: mise.toml points SMOLVM_MACHINE_NAME at
@@ -11,6 +12,10 @@
 BUILDVM="${VARIA_BUILD_MACHINE:-varia-build}"
 
 in_buildvm() { smolvm machine exec --name "$BUILDVM" -w /src -- "$@"; }
+
+# exec buffers stdout here and truncates it at ~11 MiB, so anything whose output
+# is the payload itself (a build log, an image tar) must stream instead.
+in_buildvm_stream() { smolvm machine exec --stream --name "$BUILDVM" -w /src -- "$@"; }
 
 buildvm_up() {
     command -v smolvm >/dev/null || die "smolvm is not installed (brew install smol-machines/tap/smolvm)"
@@ -27,9 +32,8 @@ buildvm_stop() { smolvm machine stop --name "$BUILDVM" >/dev/null 2>&1 || true; 
 
 # build_image <image>: build the repo's Containerfile in the build machine.
 # Host networking, so the build needs no container network set up in the guest.
-# --stream: exec buffers output until the command exits, which hides a minutes
-# long build. No TTY, so podman is told to print plain step output.
+# Streamed, so the minutes long build shows its steps instead of appearing to
+# hang. No TTY, so podman is told to print plain step output.
 build_image() {
-    smolvm machine exec --stream --name "$BUILDVM" -w /src -- \
-        podman build --network=host --progress=plain -t "$1" /src
+    in_buildvm_stream podman build --network=host --progress=plain -t "$1" /src
 }

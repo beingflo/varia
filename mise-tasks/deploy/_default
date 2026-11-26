@@ -35,7 +35,7 @@ note "building ${image}"
 build_image "$image"
 
 note "shipping ${image} to ${host}"
-in_buildvm podman save "$image" | zstd -q -T0 | ssh "$host" 'zstd -q -d | podman load'
+in_buildvm_stream podman save "$image" | zstd -q -T0 | ssh "$host" 'zstd -q -d | podman load'
 # Keep one tag so the layers stay cached, without a tag piling up per deploy.
 in_buildvm sh -c "podman tag '$image' localhost/varia:previous && podman rmi '$image'" >/dev/null
 ssh "$host" "podman tag ${image} localhost/varia:current"
