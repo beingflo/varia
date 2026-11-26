@@ -14,12 +14,9 @@ memory = 6144
 workdir = "/workspace"
 
 volumes = [
-  ".:/workspace:ro",
-  "./ui:/workspace/ui",
-  "./server:/workspace/server",
-  "./design:/workspace/design",
-  "./mise-tasks:/workspace/mise-tasks",
-  "./.pi:/workspace/.pi",
+  ".:/workspace",
+  "./.git:/workspace/.git:ro",
+  "./.jj:/workspace/.jj:ro",
   # Dependency stores on the machine's own disk, so no Linux build lands on the Mac.
   "/workspace/ui/node_modules",
   "/workspace/server/target",

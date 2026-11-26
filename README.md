@@ -45,11 +45,13 @@ ever enters a VM.
 `Smolfile` is read when the machine is created. After changing it:
 `mise run vm:down && mise run vm:up`.
 
-The repo is mounted read-only; `ui/`, `server/`, `design/`, `mise-tasks/` and
-`.pi/` are separate writable mounts. A volume can only be a directory, so the
-root-level files (`PLAN.md`, `AGENTS.md`, `mise.toml`, `Containerfile`,
-`varia.container`, `Smolfile`) stay readable but not editable in the machine —
-change those from a Mac-side `pi`.
+The whole repo is mounted read-write, so the agent in the machine can change
+code, docs, `PLAN.md`, `mise.toml`, the task files and the container files. Only
+`.git` and `.jj` are read-only: no agent or `postinstall` script in there can
+rewrite history. `ui/node_modules`, `server/target` and `.pi/npm` are volumes on
+the machine's own disk instead. Verify the boundary after a create with
+`findmnt -T /workspace/.git` (expect the `.git` share) and
+`touch /workspace/.git/probe` (expect "Read-only file system").
 
 ## Known traps
 
