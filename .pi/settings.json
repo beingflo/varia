@@ -2,5 +2,6 @@
   "packages": ["npm:pi-web-access@0.48.0"],
   "hideThinkingBlock": true,
   "defaultProvider": "deepseek",
-  "defaultModel": "deepseek-flash"
+  "defaultModel": "deepseek-flash",
+  "fullscreenWheelScrollLines": 1
 }

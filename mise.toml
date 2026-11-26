@@ -9,6 +9,7 @@ rust = "latest" # the Containerfile builds with rust:bookworm, i.e. current stab
 # this variable whenever --name is left out.
 [env]
 SMOLVM_MACHINE_NAME = "varia"
+COLORTERM = "truecolor"
 
 # Set by mise while your shell is inside this repo, removed when you leave.
 #   m dev    runs `mise run dev` in the machine
