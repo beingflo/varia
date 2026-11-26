@@ -40,7 +40,28 @@ describe('App', () => {
     renderWithRepo(() => <App />, testRepo());
 
     await waitFor(() => expect(screen.getByLabelText('note body')).toHaveProperty('value', ''));
-    expect(location.pathname).toBe('/');
+    // The url is replaced once the lookup says the note is not there.
+    await waitFor(() => expect(location.pathname).toBe('/'));
+  });
+
+  it('goes back to the note it came from', async () => {
+    const repo = testRepo();
+    const first = await repo.createNote('note');
+    await repo.saveBody(first, 'the first');
+    const second = await repo.createNote('note');
+    await repo.saveBody(second, 'the second');
+    history.replaceState({}, '', `/note/${first}`);
+    renderWithRepo(() => <App />, repo);
+    await waitFor(() => expect(screen.getByLabelText('note body')).toHaveProperty('value', 'the first'));
+
+    // Moving to another note leaves an entry behind, which is what Back undoes.
+    mod('list');
+    fireEvent.click(await screen.findByText('the second'));
+    await waitFor(() => expect(location.pathname).toBe(`/note/${second}`));
+
+    history.back();
+    await waitFor(() => expect(location.pathname).toBe(`/note/${first}`));
+    await waitFor(() => expect(screen.getByLabelText('note body')).toHaveProperty('value', 'the first'));
   });
 
   it('lands on an empty draft and creates nothing', async () => {

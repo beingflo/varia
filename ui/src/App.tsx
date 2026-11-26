@@ -39,16 +39,33 @@ export default function App() {
   const [linked, setLinked] = createSignal(linkedId === null && linkedTag === null);
   const [listOpen, setListOpen] = createSignal(false);
 
-  // The open view is in the url, so a reload or a bookmark lands on the same place.
+  // The place a url names: the note and its kind if it is still live, else its tag, else a draft.
+  const openFromUrl = async () => {
+    const id = location.pathname.match(/\/note\/([\w-]+)/)?.[1];
+    const tag = location.pathname.match(/\/tag\/([^/?#]+)/)?.[1];
+    const note = id ? await repo.getNote(id) : undefined;
+    // A deleted note is a tombstone: opening it would let the editor write it back to life.
+    if (note && !note.deleted) setOpen({ kind: kindOf(note), id: note.id });
+    else if (tag) setOpen({ kind: 'tag', tag: decodeURIComponent(tag) });
+    else setOpen({ kind: 'note' });
+  };
+
+  // The open view is in the url, so a reload, a bookmark or Back lands on the same place.
+  let seen: Open | undefined;
   createEffect(() => {
     const current = open();
-    const base = import.meta.env.BASE_URL;
+    const was = seen;
+    seen = current;
     if (!current.id && !current.tag && !linked()) return; // the url is still being looked up
+    const base = import.meta.env.BASE_URL;
     const path = current.tag ? `${base}tag/${current.tag}` : current.id ? `${base}note/${current.id}` : base;
     const url = new URL(location.href);
     if (url.pathname === path) return;
     url.pathname = path;
-    history.replaceState(null, '', url);
+    // A draft that gains its id is the same place, and a blank draft is nowhere to go back to:
+    // those entries are replaced. Every other step is a move, so Back undoes it.
+    if (!was || (!was.id && !was.tag)) history.replaceState(null, '', url);
+    else history.pushState(null, '', url);
   });
 
   onMount(() => {
@@ -61,10 +78,18 @@ export default function App() {
     };
     document.addEventListener('visibilitychange', onVisibility);
     onCleanup(() => document.removeEventListener('visibilitychange', onVisibility));
+    // Back and Forward: the url moved on its own, so the view follows it. The note being left is
+    // saved first, as on every other way out of a view.
+    const onPop = () => {
+      void (async () => {
+        await flushAll();
+        await openFromUrl();
+      })();
+    };
+    addEventListener('popstate', onPop);
+    onCleanup(() => removeEventListener('popstate', onPop));
     void (async () => {
-      const note = linkedId ? await repo.getNote(linkedId) : undefined;
-      if (note) setOpen({ kind: kindOf(note), id: note.id });
-      else if (linkedTag) setOpen({ kind: 'tag', tag: decodeURIComponent(linkedTag) });
+      await openFromUrl();
       setLinked(true); // a url naming a deleted or unknown note falls back to the draft
     })();
 
