@@ -9,6 +9,6 @@ source "$root/mise-tasks/lib/env.sh"
 cd "$root/ui"
 
 note "chromium"
-npx playwright test
+npx playwright test "$@"
 note "firefox"
-VARIA_E2E_BROWSERS=firefox npx playwright test
+VARIA_E2E_BROWSERS=firefox npx playwright test "$@"

@@ -53,6 +53,10 @@ change those from a Mac-side `pi`.
 
 ## Known traps
 
+- `ui/node_modules`, `server/target` and `.pi/npm` in the machine are separate
+  volumes on its own disk, so the copies on the Mac are only used by Mac-side
+  `npm`/`cargo` runs and go stale in between. Reinstall them there before
+  trusting a Mac-side build.
 - `node:sqlite` only has FTS5 from node 26; `mise.toml` and the `Containerfile`
   both pin it, since the client schema creates an FTS5 table.
 - Pi in the machine sees a Linux terminal, not the Mac's, so

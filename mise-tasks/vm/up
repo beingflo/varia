@@ -53,8 +53,9 @@ else
 
     if [[ "$created" == 1 ]]; then
         # Volumes can arrive seeded from the Mac's directories; a new machine
-        # gets empty ones, so nothing here is built from macOS artifacts.
-        in_vm sh -c 'rm -rf ui/node_modules server/target .pi/npm'
+        # gets empty ones, so nothing here is built from macOS artifacts. The
+        # paths are mount points, so only their contents can go.
+        in_vm sh -c 'for d in ui/node_modules server/target .pi/npm; do find "$d" -mindepth 1 -delete; done'
         # Pi's model setup. Skipped when the file holds a key itself: the point
         # of the credential binding is that the key never enters the machine.
         models="$HOME/.pi/agent/models.json"
