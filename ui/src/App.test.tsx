@@ -7,6 +7,8 @@ import App from './App';
 
 // CodeMirror needs a real browser; the tests use the same props on a textarea.
 vi.mock('./editor/Editor', async () => ({ default: (await import('./editor/TextareaDouble')).default }));
+// jsdom has no IndexedDB: the engine only needs a store that loads empty.
+vi.mock('./sync/keystore', () => ({ idbAccount: { load: async () => undefined, save: async () => {}, clear: async () => {} } }));
 
 const mod = (command: Parameters<typeof runCommand>[0]) => runCommand(command);
 

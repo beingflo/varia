@@ -60,7 +60,8 @@ describe('tag stream', () => {
 
     const link = (await screen.findByText(/retry loop/)).parentElement!.querySelector('a')!;
     expect(link.getAttribute('href')).toBe(`/note/${second}`);
-    // A plain click stays in the app; a modified one is left to the browser.
+    // A plain click stays in the app; a modified one is left to the browser, which jsdom cannot do.
+    link.addEventListener('click', (event) => event.preventDefault());
     fireEvent.click(link, { metaKey: true });
     expect(onOpen).not.toHaveBeenCalled();
     fireEvent.click(link);

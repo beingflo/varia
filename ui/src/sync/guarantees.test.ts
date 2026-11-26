@@ -179,7 +179,9 @@ describe('guarantees', () => {
     server.logOf('t').stored.find((op) => op.note_id === broken)!.ciphertext = 'AAAAAAAA';
 
     const repoB = testRepo('b');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const result = await syncNow({ repo: repoB, key, token: 't', transport: server.transport });
+    expect(warn).toHaveBeenCalledWith('skipped an op that failed to apply', 'note_snapshot', broken, expect.any(Error));
     expect(result.skipped).toBe(1); // the damaged meta
     expect((await repoB.getNote(healthy))?.body).toBe('must still arrive');
     expect(await repoB.getNote(broken)).toBeUndefined(); // the data is gone at the source

@@ -6,6 +6,9 @@ import { flushAll } from '../lib/flush';
 import { renderWithRepo } from '../test-utils';
 import TodoView from './TodoView';
 
+// jsdom has no canvas; null is the case the tilde placement already handles.
+Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', { value: () => null });
+
 const items = (repo: ReturnType<typeof testRepo>, id: string) => repo.items(id, true);
 
 describe('Todo view', () => {

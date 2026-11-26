@@ -115,6 +115,7 @@ describe('notes', () => {
 
   it('skips a remote op that cannot apply instead of failing the whole page', () => {
     const db = fresh();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     // A snapshot whose note never arrived: previously this threw and pinned the cursor.
     expect(() =>
       remote(db, {
@@ -128,6 +129,7 @@ describe('notes', () => {
       }),
     ).not.toThrow();
     expect(repo.getNote(db, 'never-seen')).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith('skipped an op that failed to apply', 'note_snapshot', 'never-seen', expect.any(Error));
     // It stays out of the log, so a repair retries it once the note exists.
     expect(db.get('SELECT 1 FROM op WHERE id = ?', ['orphan'])).toBeUndefined();
   });
