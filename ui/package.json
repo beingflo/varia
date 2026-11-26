@@ -24,6 +24,10 @@
     "@sqlite.org/sqlite-wasm": "^3.54.1-build1",
     "solid-js": "^1.9.19"
   },
+  "overrides": {
+    "glob": "^14.0.6",
+    "minimatch": "^11.0.9"
+  },
   "devDependencies": {
     "@playwright/test": "^1.65.1",
     "@solidjs/testing-library": "^0.8.10",
