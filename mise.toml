@@ -12,8 +12,7 @@ SMOLVM_MACHINE_NAME = "varia"
 
 # Set by mise while your shell is inside this repo, removed when you leave.
 #   m dev    runs `mise run dev` in the machine
-#   vpi      runs Pi in the machine
+#   m pi     runs Pi in the machine
 # Plain `mise run ...` still runs on the Mac, which is where deploy belongs.
 [shell_alias]
 m = "smolvm machine exec -it -w /workspace -- mise run"
-vpi = "smolvm machine exec -it -w /workspace -- pi"

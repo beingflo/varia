@@ -1,4 +1,4 @@
-# The machine `m` and `vpi` run in (see mise.toml). Agents, dependencies and dev
+# The machine `m` runs in (see mise.toml). Agents, dependencies and dev
 # servers execute here; the Mac keeps the editor, jj and the deploy.
 #
 #   mise run vm:up      create if needed, start, install tools and dependencies

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#MISE description="Run Pi in /workspace inside the dev machine ('m pi')"
+set -euo pipefail
+
+# smolvm exists on the Mac and not in the machine, so one task covers both:
+# from outside it execs in, and the `m pi` alias lands here already inside.
+if command -v smolvm >/dev/null; then
+    exec smolvm machine exec --name "${SMOLVM_MACHINE_NAME:-varia}" -it -w /workspace -- mise run pi -- "$@"
+fi
+exec pi "$@"
