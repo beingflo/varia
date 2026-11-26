@@ -17,6 +17,7 @@ volumes = [
   ".:/workspace",
   "./.git:/workspace/.git:ro",
   "./.jj:/workspace/.jj:ro",
+  "/private/tmp/shots:/shots:ro",
   # Dependency stores on the machine's own disk, so no Linux build lands on the Mac.
   "/workspace/ui/node_modules",
   "/workspace/server/target",
@@ -28,6 +29,7 @@ ports = ["5173:5173", "8099:8099"]
 env = [
   "PATH=/root/.local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
   "MISE_TRUSTED_CONFIG_PATHS=/workspace",
+  "PI_IMAGE_TOOLS_RECENT_DIRS=/shots",
   "VARIA_DB=/var/lib/varia/dev.sqlite",
   "VARIA_BIND_ALL=1",
   "VARIA_ADDR=0.0.0.0:8099",

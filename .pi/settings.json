@@ -1,5 +1,5 @@
 {
-  "packages": ["npm:pi-web-access@0.48.0"],
+  "packages": ["npm:pi-web-access@0.48.0", "npm:pi-image-tools@1.4.0"],
   "hideThinkingBlock": true,
   "defaultProvider": "deepseek",
   "defaultModel": "deepseek-flash",
