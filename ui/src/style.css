@@ -65,9 +65,11 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--muted); outline
   .sync-dot.syncing { animation: none; opacity: 0.7; }
 }
 
+/* The card fills the page or the tile, and its empty space under the rows is the add field: a
+   text cursor there says the click lands in the caret, not in nothing. */
 .card {
   display: flex; flex-direction: column; flex: 1; min-height: 60vh;
-  width: 100%; max-width: var(--measure); margin-inline: auto;
+  width: 100%; max-width: var(--measure); margin-inline: auto; cursor: text;
 }
 .title { width: 100%; font-size: 1.4rem; font-weight: 400; margin-bottom: 0.8rem; }
 .items { list-style: none; margin: 0; padding: 0; }
@@ -79,6 +81,8 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--muted); outline
 .item-body { position: relative; flex: 1; min-width: 0; display: flex; }
 .item-text { flex: 1; min-width: 0; }
 .item-warn { position: absolute; top: 0.1rem; color: var(--warn); pointer-events: none; }
+/* The placeholder's row takes the rest of the list: the empty space under it is where the next
+   item goes, so it is the field, not a margin. */
 .item-add { display: flex; align-items: baseline; gap: 0.55rem; padding: 0.1rem 0; }
 .item-add .bullet { background: color-mix(in srgb, var(--ink) 18%, transparent); }
 .item-add.filled .bullet { background: var(--ink); }
@@ -272,9 +276,10 @@ input[type='search']::-webkit-search-cancel-button { display: none; }
    is a click target for the caret. */
 .tile-body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 0.7rem 1rem; }
 /* A tile is a column, not a page: no centring and no reading measure — the tile's own width is the
-   measure — and the note stretches to the tile so clicking the empty space under a short note puts
-   the caret at its end, the contract the full-page editor has where its wrapper fills the viewport. */
-.tile-note { min-height: 100%; display: flex; flex-direction: column; }
+   measure — and the content stretches to the tile so clicking the empty space under a short note
+   puts the caret at its end, the contract the full-page editor has where its wrapper fills the
+   viewport. A list stretches the same way, so the space under its last row is the add field. */
+.tile-note, .tile-todo { min-height: 100%; display: flex; flex-direction: column; }
 .tile .editor { max-width: none; margin-inline: 0; min-height: 4rem; }
 .tile .card { max-width: none; margin-inline: 0; min-height: 0; }
 

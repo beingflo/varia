@@ -550,7 +550,14 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
   };
 
   const card = (
-      <div class="card">
+      <div
+        class="card"
+        // The card fills the page or the tile: the space its rows leave is where the next item
+        // goes, so a click there puts the caret in the placeholder instead of doing nothing.
+        onClick={(event) => {
+          if (event.target === event.currentTarget) addInput?.focus();
+        }}
+      >
         <input
           ref={titleInput}
           class="title"

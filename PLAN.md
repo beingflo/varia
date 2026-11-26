@@ -61,6 +61,7 @@ Each phase is shippable on its own. Later phases must not force a change to the 
       chips (`design/002`)
 - [x] tag stream: `/tag/<name>` lists the notes under a tag newest first, whole bodies, a timestamp
       rail, `⌘J` files an entry tagged with the stream's tag (`design/004`)
+- [ ] Search in tag stream
 - [ ] token revocation and multiple tokens per account
 - [ ] screen showing deleted notes for recovery
 - [ ] drag and drop for list items: pointer-based with the bullet as the handle, `ordering` and `depth`

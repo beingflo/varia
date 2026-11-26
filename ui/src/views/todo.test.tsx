@@ -157,6 +157,24 @@ describe('Todo view', () => {
     });
   });
 
+  // The card fills the page, so the empty space below the rows is the add field.
+  it('puts the caret in the placeholder from the space below it', async () => {
+    const repo = testRepo();
+    const id = await repo.createNote('todo', 'work');
+    await repo.addItem(id, 'first');
+    renderWithRepo(() => <TodoView id={id} />, repo);
+    const add = await screen.findByLabelText('new item');
+    await screen.findByDisplayValue('first');
+
+    fireEvent.click(document.querySelector('.card') as HTMLElement);
+    expect(document.activeElement).toBe(add);
+
+
+    fireEvent.input(add, { target: { value: 'second' } });
+    fireEvent.keyDown(add, { key: 'Enter' });
+    await waitFor(async () => expect((await items(repo, id)).map((item) => item.text)).toEqual(['first', 'second']));
+  });
+
   // A flush started mid-word (every sync flushes before it pushes) must not hand back an older
   // version of the row: the characters typed after the write began would disappear.
   // Every sync flushes before it pushes. Committing the draft then would park a half-typed copy
