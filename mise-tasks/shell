@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#MISE description="Open a shell in /workspace inside the dev machine ('m shell')"
+set -euo pipefail
+
+# smolvm exists on the Mac and not in the machine, so one task covers both:
+# from outside it execs in, and the `m shell` alias lands here already inside.
+if command -v smolvm >/dev/null; then
+    exec smolvm machine exec --name "${SMOLVM_MACHINE_NAME:-varia}" -it -w /workspace -- mise run shell
+fi
+# Not a login shell: Debian's /etc/profile resets PATH and loses mise's shims.
+exec bash -i

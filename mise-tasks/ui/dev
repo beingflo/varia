@@ -3,4 +3,7 @@
 set -euo pipefail
 
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/ui"
+# A fresh machine starts with an empty node_modules; once it is up to date this
+# is a no-op of a second or two.
+npm install
 exec npm run dev

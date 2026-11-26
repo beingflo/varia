@@ -68,4 +68,4 @@ if ! in_vm test -d ui/node_modules/.bin; then
     in_vm sh -c 'cd ui && npm ci'
 fi
 
-note "ready: 'm dev' runs the dev servers, 'vpi' runs Pi"
+note "ready: 'm dev' runs the dev servers, 'm shell' opens a shell, 'vpi' runs Pi"

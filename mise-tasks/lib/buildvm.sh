@@ -27,6 +27,9 @@ buildvm_stop() { smolvm machine stop --name "$BUILDVM" >/dev/null 2>&1 || true; 
 
 # build_image <image>: build the repo's Containerfile in the build machine.
 # Host networking, so the build needs no container network set up in the guest.
+# --stream: exec buffers output until the command exits, which hides a minutes
+# long build. No TTY, so podman is told to print plain step output.
 build_image() {
-    in_buildvm podman build --network=host -t "$1" /src
+    smolvm machine exec --stream --name "$BUILDVM" -w /src -- \
+        podman build --network=host --progress=plain -t "$1" /src
 }
