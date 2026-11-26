@@ -46,3 +46,8 @@ block_private = true
 name = "deepseek"
 environment_variable = "DEEPSEEK_API_KEY"
 allowed_hosts = ["api.deepseek.com"]
+
+[[network.credentials]]
+name = "openrouter"
+environment_variable = "OPENROUTER_API_KEY"
+allowed_hosts = ["openrouter.ai"]
