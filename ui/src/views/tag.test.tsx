@@ -121,14 +121,15 @@ describe('tag stream', () => {
   it('pages with "load older" instead of rendering the whole history', async () => {
     clock();
     const repo = testRepo();
-    for (let i = 0; i < 27; i++) {
+    for (let i = 0; i < 127; i++) {
       const id = await repo.createNote('note');
       await repo.saveBody(id, `entry ${i}\n\n#work`);
     }
     renderWithRepo(() => <TagView tag="work" onOpen={() => {}} />, repo);
 
-    expect(await screen.findByText('entry 26')).toBeTruthy();
-    expect(screen.queryByText('entry 0')).toBeNull();
+    // The first page is 50 rows, newest first: 126 down to 77.
+    expect(await screen.findByText('entry 77')).toBeTruthy();
+    expect(screen.queryByText('entry 76')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'load older' }));
     expect(await screen.findByText('entry 0')).toBeTruthy();

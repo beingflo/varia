@@ -7,8 +7,9 @@ import { onCommand } from '../lib/commands';
 import { stamp } from '../lib/time';
 import NoteView from './NoteView';
 
-/** One page of entries; "older" asks for the next. A year of journaling is 20 clicks away. */
-const PAGE = 25;
+/** The first page; each "older" then loads a hundred more. */
+const FIRST = 50;
+const PAGE = 100;
 
 /**
  * A tag as a stream: every text note carrying it, newest first, whole bodies and no chrome. Not a
@@ -17,7 +18,7 @@ const PAGE = 25;
  */
 export default function TagView(props: { tag: string; onOpen: (note: NoteSummary) => void }) {
   const repo = useRepo();
-  const [limit, setLimit] = createSignal(PAGE);
+  const [limit, setLimit] = createSignal(FIRST);
   const [draft, setDraft] = createSignal(false);
   // The note a draft has already become: it stays in the draft block until ⌘S ends the entry, so
   // it must not also appear as a read-only row underneath.
