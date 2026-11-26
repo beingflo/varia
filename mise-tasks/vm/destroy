@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+#MISE description="Save Pi's sessions to the Mac, then delete the smolvm machine"
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$root"
+# shellcheck source=mise-tasks/lib/env.sh
+source mise-tasks/lib/env.sh
+
+name="${SMOLVM_MACHINE_NAME:-varia}"
+state="${XDG_STATE_HOME:-$HOME/.local/state}/smolvm/$name"
+
+command -v smolvm >/dev/null || die "smolvm is not installed"
+
+# Sessions can only be read while the machine runs.
+if ! smolvm machine exec --name "$name" -- true >/dev/null 2>&1; then
+    smolvm machine start --name "$name" 2>/dev/null ||
+        die "machine '$name' does not start; delete it with: smolvm machine delete --name $name -f"
+fi
+
+if smolvm machine exec --name "$name" -- test -d /root/.pi/agent/sessions; then
+    note "saving Pi sessions to $state/pi-sessions"
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    smolvm machine exec --name "$name" -- tar -C /root/.pi/agent -cf - sessions | tar -C "$tmp" -xf -
+    [[ -d "$tmp/sessions" ]] || die "no sessions arrived; the machine was left as it is"
+    mkdir -p "$state"
+    rm -rf "$state/pi-sessions"
+    mv "$tmp/sessions" "$state/pi-sessions"
+else
+    note "no Pi sessions in the machine"
+fi
+
+note "deleting machine '$name'"
+smolvm machine delete --name "$name" -f

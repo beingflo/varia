@@ -1,11 +1,12 @@
 # The machine `m` runs in (see mise.toml). Agents, dependencies and dev
 # servers execute here; the Mac keeps the editor, jj and the deploy.
 #
-#   mise run vm:up      create if needed, start, install tools and dependencies
-#   mise run vm:down    save Pi's sessions to the Mac, then delete the machine
+#   mise run vm:up        create if needed, start, install tools and dependencies
+#   mise run vm:down      stop it; the disk and Pi's sessions are kept
+#   mise run vm:destroy   save Pi's sessions to the Mac, then delete it
+#   mise run vm:recreate  destroy, then up
 #
-# Read when the machine is created: after editing, `mise run vm:down` and
-# `mise run vm:up`.
+# Read when the machine is created: after editing, `mise run vm:recreate`.
 
 image = "debian:bookworm-slim"
 cpus = 4

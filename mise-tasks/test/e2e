@@ -8,6 +8,9 @@ cd "$root"
 source "$root/mise-tasks/lib/env.sh"
 cd "$root/ui"
 
+# Slow (downloads, apt), but a no-op once present, so it stays out of `vm:up`.
+npx playwright install --with-deps chromium firefox
+
 note "chromium"
 npx playwright test "$@"
 note "firefox"

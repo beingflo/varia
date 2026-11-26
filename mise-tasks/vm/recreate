@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#MISE description="Delete the smolvm machine and create it again from the Smolfile"
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$root"
+# shellcheck source=mise-tasks/lib/env.sh
+source mise-tasks/lib/env.sh
+
+note "recreating the machine: destroy, then up"
+mise run vm:destroy
+mise run vm:up

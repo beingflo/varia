@@ -66,10 +66,12 @@ else
                 smolvm machine cp "$models" "$name:/root/.pi/agent/models.json"
             fi
         fi
-        # Sessions saved by the last `vm:down`.
+        # Sessions saved by the last `vm:destroy`.
         if [[ -d "$sessions" ]]; then
             note "restoring Pi sessions"
-            tar -C "$(dirname "$sessions")" -cf - pi-sessions |
+            # --no-mac-metadata: macOS tar otherwise writes com.apple.* xattrs as
+            # pax headers, which GNU tar in the machine can only warn about.
+            tar --no-mac-metadata -C "$(dirname "$sessions")" -cf - pi-sessions |
                 smolvm machine exec --name "$name" -i -- \
                     sh -c 'mkdir -p /root/.pi/agent && tar -C /root/.pi/agent -xf - && rm -rf /root/.pi/agent/sessions && mv /root/.pi/agent/pi-sessions /root/.pi/agent/sessions'
         fi
@@ -81,11 +83,6 @@ in_vm mise install --yes
 if ! in_vm test -d ui/node_modules/.bin; then
     note "installing ui dependencies"
     in_vm sh -c 'cd ui && npm ci'
-fi
-# Playwright's browsers live per machine and `mise run test:e2e` needs both.
-if ! in_vm test -d /root/.cache/ms-playwright; then
-    note "installing playwright browsers"
-    in_vm sh -c 'cd ui && npx playwright install --with-deps chromium firefox'
 fi
 
 note "ready: 'm dev' runs the dev servers, 'm shell' opens a shell, 'm pi' runs Pi"
