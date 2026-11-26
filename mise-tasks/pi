@@ -7,4 +7,4 @@ set -euo pipefail
 if command -v smolvm >/dev/null; then
     exec smolvm machine exec --name "${SMOLVM_MACHINE_NAME:-varia}" -it -w /workspace -- mise run pi -- "$@"
 fi
-exec pi "$@"
+exec pi --approve "$@"

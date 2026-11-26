@@ -39,7 +39,7 @@ else
     fi
 
     # The mount points have to exist before the machine binds its own disk there.
-    mkdir -p ui/node_modules server/target
+    mkdir -p ui/node_modules server/target .pi/npm
 
     created=0
     if ! smolvm machine start --name "$name" 2>/dev/null; then

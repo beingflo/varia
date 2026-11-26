@@ -19,6 +19,8 @@ volumes = [
   "./server:/workspace/server",
   "/workspace/ui/node_modules",
   "/workspace/server/target",
+  "./.pi:/workspace/.pi",
+  "/workspace/.pi/npm",
 ]
 
 ports = ["5173:5173", "8099:8099"]
