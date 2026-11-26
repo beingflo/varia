@@ -7,5 +7,8 @@ set -euo pipefail
 if command -v smolvm >/dev/null; then
     exec smolvm machine exec --name "${SMOLVM_MACHINE_NAME:-varia}" -it -w /workspace -- mise run shell
 fi
-# Not a login shell: Debian's /etc/profile resets PATH and loses mise's shims.
+
+if command -v fish >/dev/null; then
+    exec fish
+fi
 exec bash -i

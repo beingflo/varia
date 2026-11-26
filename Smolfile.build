@@ -7,19 +7,15 @@
 
 image = "quay.io/podman/stable"
 cpus = 4
-memory = 6144 # MiB ceiling; taken on demand and handed back
+memory = 6144
 net = true
 
 workdir = "/src"
 
 volumes = [
   ".:/src:ro",
-  # podman's image and layer store, on the machine's own disk. This is the
-  # build cache, and the only thing a deploy leaves behind.
   "/var/lib/containers",
 ]
 
 [network]
-# Registries only need the public internet: the LAN, Tailscale and the Mac's
-# own ports are closed.
 block_private = true
