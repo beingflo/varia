@@ -127,6 +127,8 @@ that set it, so concurrent check-off and rename do not fight.
 
 - `deleted` is a tombstone: the item disappears from the list, its ops stay.
 - `ordering` is a fractional value; inserting between neighbours uses the midpoint, with no renumbering.
+  Two devices appending offline from the same list choose the same value, so `(ordering, id)` is the
+  order — the id alone breaks the tie, and arrival order is never part of it.
 - Done items are hidden by default in the UI, not deleted.
 
 ## Dashboards

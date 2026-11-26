@@ -46,6 +46,7 @@ Each phase is shippable on its own. Later phases must not force a change to the 
 - [ ] export: zip of `*.md`, todo JSON and the raw op log; import that restores an account
 - [ ] quick search: `.../?q=bla` opens varia on the search view with `bla` prefilled and prefiltered
 - [ ] observability in acta
+- [ ] check notes migration
 
 ## Phase 4: Advanced, unordered
 

@@ -9,6 +9,9 @@ import { signalViewReady } from '../lib/ready';
 const INDENT_REM = 1.4;
 const WARN_MS = 1200;
 
+/** The order `repo.items` returns: ordering, then id, so a tie cannot split two devices. */
+const byOrder = (a: Item, b: Item) => a.ordering - b.ordering || (a.id < b.id ? -1 : 1);
+
 /** Keep object identity for rows whose stored fields did not change, so the DOM (and focus) survive a reload. */
 function merge(current: Item[], next: Item[]): Item[] {
   const byId = new Map(current.map((item) => [item.id, item]));
@@ -107,7 +110,7 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
       setAll((current) => {
         const rows = merge(current, data.items);
         const pending = current.filter((row) => localRows.has(row.id) && !data.items.some((next) => next.id === row.id));
-        return pending.length > 0 ? [...rows, ...pending].sort((a, b) => a.ordering - b.ordering) : rows;
+        return pending.length > 0 ? [...rows, ...pending].sort(byOrder) : rows;
       });
     });
 
@@ -401,7 +404,7 @@ export default function TodoView(props: { id?: string; onCreated?: (id: string) 
     };
     lastCreatedDepth = depth;
     localRows.add(row.id);
-    batch(() => setAll((list) => [...list, row].sort((a, b) => a.ordering - b.ordering)));
+    batch(() => setAll((list) => [...list, row].sort(byOrder)));
     focusItem(row.id, true);
     void serial(async () => {
       const abandoned = abandonedRows();

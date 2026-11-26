@@ -41,6 +41,15 @@ async function pair() {
 const shape = async (repo: ReturnType<typeof testRepo>, id: string) =>
   (await repo.versions(id)).map((v) => `${v.id}|${v.parent_id}`).sort();
 
+/** The list as it is shown: order is the list's meaning, so this is what must match. */
+const texts = async (repo: ReturnType<typeof testRepo>, id: string) =>
+  (await repo.items(id, true)).map((item) => item.text);
+
+/** Syncs until there is nothing left to pull: one round is not enough after both devices pushed. */
+const settle = async (repo: ReturnType<typeof testRepo>, key: Awaited<ReturnType<typeof pair>>['key'], server: ReturnType<typeof fakeServer>) => {
+  while ((await syncNow({ repo, key, token: 't', transport: server.transport })).more);
+};
+
 describe('convergence', () => {
   it('a branch made offline reaches the other device with its parent', async () => {
     const { key, a, b } = await pair();
@@ -151,5 +160,52 @@ describe('convergence', () => {
     expect(await shape(b, id)).toEqual(await shape(a, id));
     expect(await a.heads(id)).toHaveLength(2);
     expect(await b.heads(id)).toHaveLength(2);
+  });
+
+  // `ordering` is a fractional number, so two appends made offline from the same list get the
+  // same one: the id breaks the tie, so the order is a function of the log, not of arrival.
+  it('two devices that both appended offline show the same item order', async () => {
+    const { key, a, b } = await pair();
+    const server = fakeServer();
+    const id = await a.createNote('todo', 'work');
+    await a.addItem(id, 'first');
+    await settle(a, key, server);
+    await settle(b, key, server);
+    expect(await texts(b, id)).toEqual(['first']);
+
+    // Both append to the end of the same list, offline, before either has seen the other's item.
+    await a.addItem(id, 'from a');
+    await b.addItem(id, 'from b');
+
+    await settle(a, key, server);
+    await settle(b, key, server);
+    await settle(a, key, server);
+
+    expect(await texts(b, id)).toEqual(await texts(a, id));
+  });
+
+  it('a device that pulls afterwards sees one order, whoever pushed first', async () => {
+    const orders: string[][] = [];
+    for (const first of ['a', 'b'] as const) {
+      const { key, a, b } = await pair();
+      const server = fakeServer();
+      const id = await a.createNote('todo', 'work');
+      await a.addItem(id, 'first');
+      await settle(a, key, server);
+      await settle(b, key, server);
+
+      // The same two appends as above, only the order they reach the server differs. The item ids
+      // are given, because they are the tie-break: two runs must differ in nothing else.
+      await a.addItem(id, 'from a', 'item-from-a');
+      await b.addItem(id, 'from b', 'item-from-b');
+      await settle(first === 'a' ? a : b, key, server);
+      await settle(first === 'a' ? b : a, key, server);
+
+      // A third device has no insertion order of its own: it only has the ops.
+      const fresh = testRepo('device-fresh');
+      await settle(fresh, key, server);
+      orders.push(await texts(fresh, id));
+    }
+    expect(orders[0]).toEqual(orders[1]);
   });
 });

@@ -537,8 +537,10 @@ function headVersionId(db: Db, noteId: string): string | null {
 
 export function items(db: Db, noteId: string, showDone = false): Item[] {
   return db.all<Item>(
+    // The id breaks a tie: two devices appending offline from the same list choose the same
+    // ordering, and arrival order is not the same on two devices (design/002).
     `SELECT * FROM todo_item WHERE note_id = ? AND deleted = 0 ${showDone ? '' : 'AND done = 0'}
-     ORDER BY ordering`,
+     ORDER BY ordering, id`,
     [noteId],
   );
 }
