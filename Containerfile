@@ -1,5 +1,5 @@
 # --- frontend ---------------------------------------------------------------
-FROM node:23-bookworm AS ui-builder
+FROM node:26-bookworm AS ui-builder
 WORKDIR /usr/src/varia/ui
 
 COPY ui/package.json ui/package-lock.json ./

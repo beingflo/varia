@@ -2,7 +2,7 @@
 # themselves stay in mise-tasks/.
 
 [tools]
-node = "23"     # same major as the Containerfile's ui-builder (node:23-bookworm)
+node = "26"
 rust = "latest" # the Containerfile builds with rust:bookworm, i.e. current stable
 
 # The smolvm machine for this repo (see Smolfile). smolvm reads the name from

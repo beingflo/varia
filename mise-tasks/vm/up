@@ -11,7 +11,7 @@ name="${SMOLVM_MACHINE_NAME:-varia}"
 # 1Password reference for the key Pi uses. The variable name must match the
 # credential binding in the Smolfile and what your Pi model config reads.
 deepseek_ref="${VARIA_PI_KEY_REF:-"op://Personal/Deepseek API Key/key"}"
-openrouter_ref="${VARIA_PI_KEY_REF:-"op://Personal/OpenRouter API Key/key"}"
+openrouter_ref="${VARIA_OPENROUTER_KEY_REF:-"op://Personal/OpenRouter API Key/key"}"
 sessions="${XDG_STATE_HOME:-$HOME/.local/state}/smolvm/$name/pi-sessions"
 
 command -v smolvm >/dev/null || die "smolvm is not installed (brew install smol-machines/tap/smolvm)"
@@ -33,8 +33,10 @@ else
     if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
         if command -v op >/dev/null && key="$(op read "$openrouter_ref" 2>/dev/null)"; then
             export OPENROUTER_API_KEY="$key"
+        elif key="$(jq -r '.openrouter.key // empty' "$HOME/.pi/agent/auth.json" 2>/dev/null)" && [[ -n "$key" ]]; then
+            export OPENROUTER_API_KEY="$key"
         else
-            note "no key from 1Password ($openrouter_ref): OpenRouter requests will fail until one is set"
+            note "no OpenRouter key from 1Password ($openrouter_ref) or ~/.pi/agent/auth.json"
         fi
     fi
 
@@ -50,6 +52,9 @@ else
     fi
 
     if [[ "$created" == 1 ]]; then
+        # Volumes can arrive seeded from the Mac's directories; a new machine
+        # gets empty ones, so nothing here is built from macOS artifacts.
+        in_vm sh -c 'rm -rf ui/node_modules server/target .pi/npm'
         # Pi's model setup. Skipped when the file holds a key itself: the point
         # of the credential binding is that the key never enters the machine.
         models="$HOME/.pi/agent/models.json"
@@ -75,6 +80,11 @@ in_vm mise install --yes
 if ! in_vm test -d ui/node_modules/.bin; then
     note "installing ui dependencies"
     in_vm sh -c 'cd ui && npm ci'
+fi
+# Playwright's browsers live per machine and `mise run test:e2e` needs both.
+if ! in_vm test -d /root/.cache/ms-playwright; then
+    note "installing playwright browsers"
+    in_vm sh -c 'cd ui && npx playwright install --with-deps chromium firefox'
 fi
 
 note "ready: 'm dev' runs the dev servers, 'm shell' opens a shell, 'm pi' runs Pi"
