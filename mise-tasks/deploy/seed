@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+#MISE description="Import a restored SQLite file into a fresh varia-data volume"
+#USAGE arg "<file>" help="SQLite file produced by mise run restore"
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$root"
+# shellcheck source=/dev/null
+source "$root/mise-tasks/lib/env.sh"
+load_deploy_env
+
+host="${VARIA_HOST:-eos}"
+file="${1:-}"
+image=localhost/varia:current
+
+[[ -n "$file" && -f "$file" ]] || die "usage: mise run deploy:seed -- <restored .sqlite file>"
+# A restored file is standalone; a WAL sidecar restored beside it would shadow the data.
+for sidecar in "${file}-wal" "${file}-shm"; do
+    [[ -e "$sidecar" ]] && die "${sidecar} exists; restore writes a standalone file, remove it"
+done
+
+# Seeding replaces the database, so it must only ever run against a volume that
+# holds no data. The check is read-only and runs before anything is stopped: a
+# running service is production, and aborting must leave it untouched.
+note "checking that varia-data holds no database yet"
+existing="$(ssh "$host" "podman run --rm -v varia-data:/data:ro --entrypoint /bin/sh ${image} -c 'ls -1 /data/varia.sqlite* 2>/dev/null || true'" 2>/dev/null)" \
+    || die "could not inspect varia-data (is the ${image} image deployed?)"
+if [[ -n "$existing" ]]; then
+    printf '%s\n' "$existing" | sed 's|^/data/|    |'
+    die "varia-data already holds a database; refusing to overwrite it.
+
+Nothing was changed. To replace the data, clear the volume first and re-run:
+    ssh ${host} 'systemctl --user stop varia; podman volume rm varia-data'
+    mise run deploy:seed ${file}"
+fi
+
+# Stopping the service is part of seeding, so bring it back on every exit path:
+# a failed or interrupted import must not leave varia down.
+restore_service() {
+    ssh "$host" 'systemctl --user start varia' >/dev/null 2>&1 \
+        || echo "warning: varia is still stopped; start it with: ssh $host systemctl --user start varia" >&2
+    ssh "$host" 'podman ps --format "{{.Names}}" | grep -qx systemd-varia' >/dev/null 2>&1 \
+        || echo "warning: varia did not stay running; check: ssh $host journalctl --user -u varia -n 50" >&2
+}
+trap restore_service EXIT INT TERM
+
+note "stopping varia and importing the database into varia-data"
+ssh "$host" 'systemctl --user stop varia >/dev/null 2>&1 || true'
+# Copy the bytes through a container running as the same uid the service does
+# (keep-id maps it to the deploying user who owns the volume), so the imported
+# database is writable by the service. A tar import would carry the Mac's uid and
+# leave SQLite unable to write.
+cat "$file" | ssh "$host" "podman run --rm -i \
+    --userns keep-id:uid=1000,gid=1000 --user 1000:1000 \
+    -v varia-data:/data --entrypoint /bin/sh ${image} -c 'cat > /data/varia.sqlite'"
+
+# Confirm the import landed intact: a truncated file still leaves the seed
+# looking successful, then fails at startup.
+local_size="$(wc -c < "$file" | tr -d ' ')"
+remote_size="$(ssh "$host" "podman run --rm -v varia-data:/data:ro --entrypoint /bin/sh ${image} -c 'stat -c %s /data/varia.sqlite'" 2>/dev/null)" \
+    || die "could not stat the imported database"
+[[ "$remote_size" == "$local_size" ]] \
+    || die "import is incomplete or truncated: ${remote_size:-missing} != ${local_size}"
+
+note "seeded"

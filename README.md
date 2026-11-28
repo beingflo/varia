@@ -21,13 +21,18 @@ One alias runs a task in the machine: `m <task>` = `mise run <task>` there.
 | `m pi`                  | Pi in the machine, with the project's `.pi` settings and web tools     |
 | `mise run deploy:build` | build the image in the `varia-build` machine, nothing else             |
 | `mise run deploy`       | build, ship to `$VARIA_HOST`, restart the quadlet unit                 |
+| `mise run deploy:secrets` | install the S3 keys and backup heartbeat as podman secrets           |
+| `mise run restore`      | decrypt the newest S3 backup object into a local `varia.restore.sqlite` |
+| `mise run deploy:seed`  | import a restored SQLite file into a fresh `varia-data` volume         |
 | `mise run vm:down`      | stop the machine, keeping its disk and Pi's sessions                   |
 | `mise run vm:destroy`   | save Pi's sessions to the Mac, then delete the machine                 |
 | `mise run vm:recreate`  | destroy, then up: re-reads the Smolfile and rebuilds everything        |
 
-`deploy` and `deploy:build` stay on the Mac: the build runs in its own machine
-(`Smolfile.build`) and only the finished image leaves it, so no SSH key or agent
-ever enters a VM.
+`deploy`, `deploy:secrets`, `deploy:seed` and `restore` stay on the Mac: the build runs in its own
+machine (`Smolfile.build`) and only the finished image leaves it, so no SSH key or
+agent ever enters a VM. `deploy` never decrypts anything — it only checks that
+`deploy:secrets` installed the credentials; `restore` and `deploy:secrets` are the
+only tasks that read the sops age key from 1Password.
 
 ## State
 

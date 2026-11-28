@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+#MISE description="Restore the newest S3 backup object into a local SQLite file"
+#USAGE arg "[file]" help="target database file; varia.restore.sqlite in the repo when omitted"
+#USAGE flag "--force" help="overwrite the file if it already exists"
+set -euo pipefail
+
+invoked_from="$PWD"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$root"
+# shellcheck source=/dev/null
+source "$root/mise-tasks/lib/env.sh"
+
+file="${usage_file:-$root/varia.restore.sqlite}"
+[[ "$file" = /* ]] || file="${invoked_from}/${file}"
+
+# Same configuration and credentials the deployed service uses, decrypted through
+# the shared helper: nothing is written to disk and no copy is left behind. Both
+# helpers deliberately leave their values as plain shell variables so nothing
+# leaks into a child process such as ssh; the restore binary is exactly such a
+# child, so these have to be exported by hand.
+load_deploy_env
+load_deploy_secrets
+for key in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
+    [[ -n "${!key:-}" ]] || die "${key} is missing from .deploy.secrets.enc"
+done
+[[ -n "${VARIA_S3_BUCKET:-}" ]] || die "VARIA_S3_BUCKET is empty; nothing to restore from"
+
+# The archive is encrypted, and its age identity lives only in 1Password: there
+# is deliberately no copy on the server, so a restore happens here and the file
+# is then seeded to the host. Read the private half, hand it to the binary in its
+# environment, and never write it to disk.
+identity="$(backup_identity)"
+[[ "$identity" == AGE-SECRET-KEY-1* ]] \
+    || die "the private key of '$backup_item' in 1Password is not an age identity"
+export VARIA_BACKUP_AGE_IDENTITY="$identity"
+unset identity
+
+export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY \
+    VARIA_S3_BUCKET VARIA_S3_REGION VARIA_S3_ENDPOINT VARIA_S3_PREFIX VARIA_S3_ALLOW_HTTP
+
+if [[ -e "$file" ]] && [[ "${usage_force:-false}" != "true" ]]; then
+    die "${file} exists; pass --force to replace it"
+fi
+
+args=(restore)
+[[ "${usage_force:-false}" == "true" ]] && args+=(--force)
+
+# Release on purpose: it is the profile `service:dev` already builds, so this
+# costs a link rather than a fresh debug tree.
+note "restoring into ${file}"
+VARIA_DB="$file" cargo run --release --manifest-path server/Cargo.toml -- "${args[@]}"
+
+note "to replace the server's volume with it: mise run deploy:seed ${file}"

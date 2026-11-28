@@ -80,8 +80,10 @@ loopback port, the SQLite file on a named volume.
 ```
 Containerfile     node build (ui) → rust build (server) → debian-slim runtime, ~108 MB
 varia.container   quadlet unit: loopback port, varia-data:/data, keep-id uid 1000, no capabilities
-.deploy.env       VARIA_HOST, VARIA_DOMAIN, VARIA_PORT — non-secret, committed
-mise-tasks/       dev, service:dev, ui:dev, test, test:e2e, deploy, deploy:build
+.deploy.env       VARIA_HOST, VARIA_DOMAIN, VARIA_PORT, the S3 target — non-secret, committed
+.sops.yaml        the sops age recipient; .deploy.secrets.enc holds the S3 keys
+mise-tasks/       dev, service:dev, ui:dev, test, test:e2e, deploy, deploy:build,
+                  deploy:secrets, deploy:seed, restore
 ```
 
 The container listens on 8080 and the host side comes from `VARIA_PORT` (default 8090, because 8080
@@ -94,10 +96,11 @@ container is running, `127.0.0.1:$VARIA_PORT/healthz` answers, and `https://$VAR
 all three isolation headers. A container that exits on startup leaves the unit inactive without an
 error, which is why the running check comes first.
 
-Unlike the service this repo borrows its deploy from, nothing is secret: the log is encrypted
-client-side, so there are no podman secrets, no sops file and nothing to rotate. Caddy needs no
-header configuration — the binary sets COOP/COEP/CORP on every response — only a reverse proxy to
-the loopback port, in the `eos-core` checkout:
+Unlike the service this repo borrows its deploy from, the op log is encrypted client-side, so the only
+secret is the S3 credential and the archive's age key: they live in the committed ciphertext
+`.deploy.secrets.enc` (sops) and are installed as podman secrets by `mise run deploy:secrets`. Caddy
+needs no header configuration — the binary sets COOP/COEP/CORP on every response — only a reverse
+proxy to the loopback port, in the `eos-core` checkout:
 
 ```
 varia.page {
@@ -112,10 +115,38 @@ second hostname would be a second, empty notebook.
 `mise run dev` runs both dev servers with job control, so Ctrl-C stops both. The service listens on
 `127.0.0.1:8099` and writes `.varia-dev.sqlite`; Vite proxies `/api` there.
 
-Backups are dull because the data is already encrypted: the file copy (or `sqlite3 .backup`) to
-another host is a valid backup. Daily cron is enough; history that is a day behind is still history.
-Health: an unauthenticated `/healthz` and nothing else to watch — the log either accepts writes or it
-does not.
+## Backup
+
+The service uploads a daily snapshot of the whole SQLite file to an S3-compatible bucket, in process
+(`VARIA_BACKUP=on`, which the deploy sets exactly when `VARIA_S3_BUCKET` is). `VACUUM INTO` takes a
+consistent standalone copy from a second connection, so the sync path's mutex is never held; the copy
+is encrypted to an age recipient before it leaves the host, and the plaintext snapshot is deleted
+after every pass.
+
+The bucket holds a ring of `VARIA_BACKUP_SLOTS` objects (`varia-N.sqlite.age`, default 7 daily).
+Each pass fills the first empty slot; once full it overwrites the object with the oldest
+`last-modified`. `PUT` is atomic, so the ring is not about a torn upload — it is so a complete but
+unusable snapshot, or a corruption noticed a day later, still leaves an earlier copy.
+
+**Encryption covers the metadata too.** Op bodies are already end-to-end encrypted, but the snapshot
+carries every account's `token_hash` and the plaintext op envelope (device, note id, kind, time,
+size). The recipient is a public key in `.deploy.env`; the identity is only in 1Password, so the
+server can write the archive but not read it, and a restore is laptop work.
+
+**Restore** is `mise run restore` here: it decrypts the newest object with the identity from
+1Password, writes a standalone SQLite file, and `mise run deploy:seed <file>` imports it into the
+volume with the service stopped. The identity is deliberately absent from the host.
+
+**What a restore cannot recover.** It recovers the log to the newest object plus everything a
+surviving device re-pushes — `design/003`: a server head below the client's cursor makes the client
+rewind and re-push the whole log, and op-id dedupe makes that harmless. Data that existed only on the
+lost server since the last pass — and an account created entirely within that window, whose devices
+are also gone — has no other copy and is gone. One surviving device per account covers both; the
+token may change, the notes never do.
+
+An error-free pass pings `VARIA_BACKUP_PING_URL` if one is configured (a dead-man's switch). Health
+is otherwise an unauthenticated `/healthz` and the backup's own log lines: the log either accepts
+writes or it does not.
 
 ## Implementation notes
 

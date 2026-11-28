@@ -1,20 +1,70 @@
 #!/usr/bin/env bash
-# Shared by the mise tasks. Sourced, never executed (no executable bit, so mise
-# does not expose it as a task).
+# Shared by the mise tasks. Sourced, never executed (no executable bit, so
+# mise does not expose it as a task).
 #
-#   die, note        one-line failure and progress output
-#   load_deploy_env  sources the committed, non-secret configuration
+#   die, note             one-line failure and progress output
+#   load_deploy_env       sources the committed, non-secret configuration
+#   age_key               reads the sops age private key out of 1Password
+#   backup_identity       reads the backup's age private key out of 1Password
+#   load_deploy_secrets   decrypts the credentials into shell variables
 #
-# varia has no server-side secrets: the op log is encrypted on the client, so the
-# deployment needs nothing but a host name. Against acta's deploy that is the
-# whole difference: no podman secrets, no sops, nothing to rotate.
+# Three files, named for their contents:
+#   .deploy.env           committed, non-secret configuration
+#   .deploy.secrets       gitignored plaintext credentials
+#   .deploy.secrets.enc   committed sops ciphertext of those credentials
+#
+# Nothing here exports what it reads: values stay shell variables, so they
+# never show up in the environment of child processes such as ssh.
 
 die() { echo "error: $*" >&2; exit 1; }
 note() { echo "==> $*"; }
 
-# Non-secret configuration: VARIA_HOST, VARIA_DOMAIN, VARIA_PORT.
+age_item="SOPS age key - varia"
+backup_item="age backup key - varia"
+
+# Non-secret configuration: VARIA_HOST, VARIA_DOMAIN, VARIA_PORT, the S3 target.
+# Every task calls this; it never reads credentials.
 load_deploy_env() {
     [[ -f .deploy.env ]] || return 0
     # shellcheck disable=SC1091
     source .deploy.env
+}
+
+# The age key's private half lives in 1Password and is only ever read into a
+# variable: never written to disk and never exported, so it stays out of the
+# environment of child processes such as ssh. `deploy:secrets` uses it to
+# decrypt, `deploy:edit-secrets` to hand sops an editor.
+age_key() {
+    command -v op >/dev/null || die "1Password CLI (op) not found (brew install 1password-cli)"
+    op item get "$age_item" --reveal --fields "private key" \
+        || die "could not read '$age_item' from 1Password"
+}
+
+# The private half of the key the daily backup encrypts to. It exists to read the
+# archive back, and only that: the service holds the public recipient and never
+# the identity, so the server can write the backup but not open it. Only a
+# restore needs this, and a restore is therefore laptop work.
+backup_identity() {
+    command -v op >/dev/null || die "1Password CLI (op) not found (brew install 1password-cli)"
+    op item get "$backup_item" --reveal --fields "private key" \
+        || die "could not read the private key of '$backup_item' from 1Password"
+}
+
+# Credentials for deployment, decrypted from the committed ciphertext. Only
+# `deploy:secrets` and `restore` call this; `mise run deploy` never decrypts
+# anything. The ciphertext is the single source of truth: editing the plaintext
+# `.deploy.secrets` has no effect until it is re-encrypted and committed.
+load_deploy_secrets() {
+    command -v sops >/dev/null || die "sops not found (brew install sops)"
+    [[ -f .deploy.secrets.enc ]] || die ".deploy.secrets.enc not found; run: mise run deploy:edit-secrets"
+
+    local key out
+    key="$(age_key)"
+    out="$(SOPS_AGE_KEY="$key" sops -d --input-type dotenv --output-type dotenv .deploy.secrets.enc)" \
+        || die "sops failed to decrypt .deploy.secrets.enc; does the '$age_item' key match .sops.yaml?"
+    unset key
+
+    # `eval`, not `source <(...)`: macOS bash 3.2 sources nothing in that form.
+    eval "$out"
+    unset out
 }

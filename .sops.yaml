@@ -1,0 +1,26 @@
+# sops configuration for the deploy credentials.
+#
+# Fill in the public key of the varia age key. Its private half lives in the
+# 1Password item "SOPS age key - varia" and is only ever read into a variable by
+# `mise run deploy:secrets`.
+#
+# Generate the key once:
+#   age-keygen -o /tmp/varia-sops.key
+#   op item create --category "Password" --title "SOPS age key - varia" \
+#       "private key=$(grep 'AGE-SECRET-KEY' /tmp/varia-sops.key)"
+#   rm /tmp/varia-sops.key
+# then put the printed `age1...` public key here.
+#
+# Seal the plaintext credentials with:
+#   sops --encrypt --input-type dotenv --output-type dotenv \
+#       .deploy.secrets > .deploy.secrets.enc
+#
+# Edit the committed ciphertext in place (no plaintext copy is left behind) with:
+#   mise run deploy:edit-secrets
+# followed by `mise run deploy:secrets` to install the values as podman secrets.
+#
+# sops resolves creation rules from the *input* path, so the rule matches the
+# gitignored plaintext `.deploy.secrets` and its encrypted counterpart.
+creation_rules:
+  - path_regex: \.deploy\.secrets(\.enc)?$
+    age: "age1fc33lwzj2haap3qxpqwqhag2y68j744c69v4dearp3dxfp0trfzss5ype7"

@@ -37,7 +37,7 @@ Each phase is shippable on its own. Later phases must not force a change to the 
 - [x] landing page at `/landing`, `/` routes by the `varia:entered` flag, `/app` for installed windows
 - [x] sync state dot in the bottom-right corner on every screen
 - [x] eviction recovery: an empty database reads its cursor as 0, so the whole log replays
-- [ ] Backup mechanism
+- [x] Backup mechanism
 - [ ] brainstorm if todo reminders change data format
 - [ ] Add help overlay
 - [ ] Change sync shortcut, add sync settings to separate screen

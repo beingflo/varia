@@ -24,5 +24,21 @@ UserNS=keep-id:uid=1000,gid=1000
 NoNewPrivileges=true
 DropCapability=all
 
+# Non-secret configuration is rendered into the Environment= lines below by
+# `mise run deploy`. The S3 credentials are podman secrets, so they never appear
+# in the unit or the image.
+__CONFIG__
+
+Secret=varia-aws-key-id,type=env,target=AWS_ACCESS_KEY_ID
+Secret=varia-aws-secret,type=env,target=AWS_SECRET_ACCESS_KEY
+# The backup encrypts every object to a public age recipient, which arrives as an
+# Environment= line above. Its private half is not installed here at all, so this
+# container can write the archive but cannot read it; restoring happens on a
+# machine that can unlock the vault, then seeds the volume.
+# The optional backup heartbeat; the deploy drops this line when the secret is
+# not installed. Its token is the credential — anyone holding it could fake a
+# ping — so it is a secret like the S3 keys.
+Secret=varia-backup-ping-url,type=env,target=VARIA_BACKUP_PING_URL
+
 [Install]
 WantedBy=default.target

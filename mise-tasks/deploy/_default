@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Build, ship and deploy varia (no secrets: the log is encrypted client-side)"
+#MISE description="Build, ship and deploy varia (run deploy:secrets first when backup is on)"
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -13,6 +13,7 @@ load_deploy_env
 host="${VARIA_HOST:-}"
 domain="${VARIA_DOMAIN:-}"
 port="${VARIA_PORT:-8090}"
+s3_bucket="${VARIA_S3_BUCKET:-}"
 [[ -n "$host" ]] || die "VARIA_HOST is empty; put it in .deploy.env (committed, non-secret)"
 
 # The host port is ours to choose, the container's is not (quadlet substitutes
@@ -21,6 +22,32 @@ port="${VARIA_PORT:-8090}"
 if ssh "$host" "curl -sf --max-time 2 -o /dev/null http://127.0.0.1:${port}/healthz" 2>/dev/null &&
     ! ssh "$host" 'podman ps --format "{{.Names}}" | grep -qx systemd-varia'; then
     die "127.0.0.1:${port} on ${host} is already serving something else; set VARIA_PORT in .deploy.env"
+fi
+
+# The archive is encrypted and its recipient is public configuration, so it is
+# rendered into the unit like the bucket. The service refuses to start with
+# backup on and no recipient; say why here, where it can still be fixed, rather
+# than let the container refuse to come up.
+if [[ -n "$s3_bucket" && -z "${VARIA_BACKUP_AGE_RECIPIENT:-}" ]]; then
+    die "VARIA_BACKUP_AGE_RECIPIENT is empty; set the archive's age public key in .deploy.env"
+fi
+
+# `deploy` never holds a credential: it only checks that `deploy:secrets`
+# installed them. The values themselves live in podman.
+require_secret() {
+    ssh "$host" "podman secret exists $1" >/dev/null 2>&1 \
+        || die "podman secret $1 is missing; run: mise run deploy:secrets"
+}
+if [[ -n "$s3_bucket" ]]; then
+    require_secret varia-aws-key-id
+    require_secret varia-aws-secret
+fi
+# The backup heartbeat is optional: with no URL the backup still runs, only an
+# outside monitor goes unwatched.
+if ssh "$host" 'podman secret exists varia-backup-ping-url' >/dev/null 2>&1; then
+    backup_ping=on
+else
+    backup_ping=off
 fi
 
 # The build runs in its own machine (Smolfile.build); everything that talks to
@@ -41,8 +68,48 @@ in_buildvm sh -c "podman tag '$image' localhost/varia:previous && podman rmi '$i
 ssh "$host" "podman tag ${image} localhost/varia:current"
 
 note "installing varia.container (${tag}, port ${port})"
+
+# Backup is on exactly when a bucket is configured.
+if [[ -n "$s3_bucket" ]]; then
+    VARIA_BACKUP=on
+else
+    VARIA_BACKUP=off
+fi
+
+# Every knob the service understands, with the value this deploy should use. A
+# variable set in .deploy.env (or the environment) wins over the default here.
+# Non-secret configuration is rendered straight into the quadlet, so the unit is
+# the single source of truth and there is no second file to keep in sync.
+# Credentials are podman secrets and never pass through this task.
+tunables=(
+    "VARIA_BACKUP=${VARIA_BACKUP}"
+    "VARIA_BACKUP_HOUR=3"
+    "VARIA_BACKUP_MINUTE=30"
+    "VARIA_BACKUP_SLOTS=7"
+    "VARIA_BACKUP_AGE_RECIPIENT="
+    "VARIA_S3_BUCKET="
+    "VARIA_S3_REGION="
+    "VARIA_S3_ENDPOINT="
+    "VARIA_S3_PREFIX="
+    "VARIA_S3_ALLOW_HTTP=off"
+)
+config=""
+for entry in "${tunables[@]}"; do
+    name="${entry%%=*}"
+    value="${!name-}"
+    [[ -n "$value" ]] || value="${entry#*=}"
+    config+="Environment=${name}=${value}"$'\n'
+done
+config="${config%$'\n'}"
+
 # `__PORT__` is the host side of the publish, `8080` stays the container's own.
-sed -e "s|__TAG__|${tag}|g" -e "s|__PORT__|${port}|g" varia.container \
+# Drop the secret mounts this deployment did not install, so the unit never names
+# a secret that is missing (which would keep the container from starting).
+sed_args=(-e "s|__TAG__|${tag}|g" -e "s|__PORT__|${port}|g")
+[[ -n "$s3_bucket" ]] || sed_args+=(-e '/target=AWS_/d')
+[[ "$backup_ping" == on ]] || sed_args+=(-e '/target=VARIA_BACKUP_PING_URL/d')
+sed "${sed_args[@]}" varia.container \
+    | CONFIG="$config" awk '{ if ($0 == "__CONFIG__") print ENVIRON["CONFIG"]; else print }' \
     | ssh "$host" 'mkdir -p "$HOME/.config/containers/systemd" && cat > "$HOME/.config/containers/systemd/varia.container"'
 
 note "restarting"
