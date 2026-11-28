@@ -10,8 +10,8 @@ source mise-tasks/lib/env.sh
 name="${SMOLVM_MACHINE_NAME:-varia}"
 # 1Password reference for the key Pi uses. The variable name must match the
 # credential binding in the Smolfile and what your Pi model config reads.
-deepseek_ref="${VARIA_PI_KEY_REF:-"op://Personal/Deepseek API Key/key"}"
 openrouter_ref="${VARIA_OPENROUTER_KEY_REF:-"op://Personal/OpenRouter API Key/key"}"
+together_ref="${VARIA_TOGETHER_KEY_REF:-"op://Personal/Together API Key/key"}"
 sessions="${XDG_STATE_HOME:-$HOME/.local/state}/smolvm/$name/pi-sessions"
 
 command -v smolvm >/dev/null || die "smolvm is not installed (brew install smol-machines/tap/smolvm)"
@@ -22,14 +22,6 @@ if in_vm true >/dev/null 2>&1; then
     note "machine '$name' is already running"
 else
     # The credential binding takes its value from this shell when the machine starts.
-    if [[ -z "${DEEPSEEK_API_KEY:-}" ]]; then
-        if command -v op >/dev/null && key="$(op read "$deepseek_ref" 2>/dev/null)"; then
-            export DEEPSEEK_API_KEY="$key"
-        else
-            note "no key from 1Password ($deepseek_ref): Deepseek requests will fail until one is set"
-        fi
-    fi
-
     if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
         if command -v op >/dev/null && key="$(op read "$openrouter_ref" 2>/dev/null)"; then
             export OPENROUTER_API_KEY="$key"
@@ -37,6 +29,16 @@ else
             export OPENROUTER_API_KEY="$key"
         else
             note "no OpenRouter key from 1Password ($openrouter_ref) or ~/.pi/agent/auth.json"
+        fi
+    fi
+
+    if [[ -z "${TOGETHER_API_KEY:-}" ]]; then
+        if command -v op >/dev/null && key="$(op read "$together_ref" 2>/dev/null)"; then
+            export TOGETHER_API_KEY="$key"
+        elif key="$(jq -r '.together.key // empty' "$HOME/.pi/agent/auth.json" 2>/dev/null)" && [[ -n "$key" ]]; then
+            export TOGETHER_API_KEY="$key"
+        else
+            note "no Together key from 1Password ($together_ref) or ~/.pi/agent/auth.json"
         fi
     fi
 

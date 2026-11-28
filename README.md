@@ -38,7 +38,7 @@ ever enters a VM.
   restores.
 - The dev database is `/var/lib/varia/dev.sqlite` inside the machine and dies
   with it. `.varia-dev.sqlite` on the Mac is only used by a Mac-side service.
-- `DEEPSEEK_API_KEY` and `OPENROUTER_API_KEY` never enter the machine: `vm:up`
+- `OPENROUTER_API_KEY` and `TOGETHER_API_KEY` never enter the machine: `vm:up`
   reads them from 1Password, and the `Smolfile` bindings only release them to
   their own API host.
 - Vite (5173) and the service (8099) are published from `Smolfile`; inside the

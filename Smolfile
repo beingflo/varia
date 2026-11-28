@@ -48,11 +48,11 @@ init = [
 block_private = true
 
 [[network.credentials]]
-name = "deepseek"
-environment_variable = "DEEPSEEK_API_KEY"
-allowed_hosts = ["api.deepseek.com"]
-
-[[network.credentials]]
 name = "openrouter"
 environment_variable = "OPENROUTER_API_KEY"
 allowed_hosts = ["openrouter.ai"]
+
+[[network.credentials]]
+name = "together"
+environment_variable = "TOGETHER_API_KEY"
+allowed_hosts = ["api.together.ai"]
