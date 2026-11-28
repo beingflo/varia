@@ -38,8 +38,16 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind(addr).await.expect("cannot bind");
     eprintln!("varia listening on {addr}");
+    // Ctrl-C in dev, SIGTERM from `systemctl stop`: both stop accepting requests and let the
+    // Store drop, which checkpoints the WAL on close. Without the SIGTERM arm the process is
+    // killed by default action, exit 143, and systemd marks the unit failed on every stop.
     let shutdown = async {
-        let _ = tokio::signal::ctrl_c().await;
+        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("cannot install the SIGTERM handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = term.recv() => {}
+        }
     };
     axum::serve(listener, app).with_graceful_shutdown(shutdown).await.expect("server failed");
 }

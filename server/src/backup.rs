@@ -299,20 +299,36 @@ async fn pull_latest(
     prefix: Option<&ObjectPath>,
     force: bool,
 ) -> Result<(), String> {
-    let mut newest: Option<(ObjectPath, i64)> = None;
+    // Newest first, so a stale or wrong pick is visible before anything is written.
+    let mut objects: Vec<(ObjectPath, i64)> = Vec::new();
     let mut listing = store.list(prefix);
     while let Some(item) = listing.next().await {
         let meta = item.map_err(|e| format!("list: {e}"))?;
-        if meta.location.filename().and_then(slot_of).is_none() {
-            continue;
-        }
-        let at = meta.last_modified.timestamp_millis();
-        if newest.as_ref().is_none_or(|(_, seen)| at > *seen) {
-            newest = Some((meta.location, at));
+        if meta.location.filename().and_then(slot_of).is_some() {
+            objects.push((meta.location, meta.last_modified.timestamp_millis()));
         }
     }
-    let (object, at) = newest.ok_or("the bucket holds no backup object")?;
-    eprintln!("restore: newest object {object} ({} s old)", (now_ms() - at).max(0) / 1000);
+    if objects.is_empty() {
+        return Err("the bucket holds no backup object".into());
+    }
+    objects.sort_by_key(|(_, at)| std::cmp::Reverse(*at));
+
+    let now = now_ms();
+    for (object, at) in &objects {
+        eprintln!("restore: {object} ({} h old)", (now - at).max(0) / 3_600_000);
+    }
+    // Daily cadence: more than two days means at least one pass was missed, so
+    // the newest object is not the near-current one a restore assumes it is.
+    const STALE_AFTER_S: i64 = 2 * 86_400;
+    let (object, at) = objects[0].clone();
+    let age_s = (now - at).max(0) / 1000;
+    eprintln!("restore: newest is {object} ({age_s} s old)");
+    if age_s > STALE_AFTER_S {
+        eprintln!(
+            "restore: WARNING: the newest object is {} day(s) old; check the service's backup log",
+            age_s / 86_400
+        );
+    }
 
     if db_path.exists() && !force {
         return Err(format!(
